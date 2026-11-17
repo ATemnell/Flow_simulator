@@ -11,6 +11,13 @@ function fmtTime(t: number): string {
   return `${m}:${s.toFixed(1).padStart(4, '0')}`;
 }
 
+/** Parse a flow rate; accepts a comma as decimal mark. Null if not a complete number. */
+export function parseFlow(text: string): number | null {
+  const t = text.trim().replace(',', '.');
+  if (!/^[-+]?(\d+\.?\d*|\.\d+)$/.test(t)) return null;
+  return Number(t);
+}
+
 const fmt = (x: number, digits = 1) => (Math.abs(x) < 1e-9 ? '0' : x.toFixed(digits));
 
 /**
@@ -66,7 +73,12 @@ export function RunPanel() {
       {pumps.length > 0 && (
         <>
           <h3>Pumps</h3>
-          <p className="note">Flow in µL/min: positive dispenses, negative aspirates. Enter to apply.</p>
+          <p className="note">Positive flow dispenses, negative aspirates.</p>
+          {pumps.every((p) => !(sim.inputs.pumpFlow[p.id] ?? 0)) && (
+            <p className="hint" role="status">
+              All pumps are stopped, so no liquid moves. Enter a flow rate below, e.g. <b>30</b> for {pumps[0].name}.
+            </p>
+          )}
         </>
       )}
       {pumps.map((p) => (
@@ -133,8 +145,15 @@ function PumpRow({ pump }: { pump: Pump }) {
   const sim = useRun((s) => s.sim)!;
   const current = sim.inputs.pumpFlow[pump.id] ?? 0;
   const [draft, setDraft] = useState(String(current));
-  useEffect(() => setDraft(String(current)), [current]);
+  // Follow external changes (Stop button, pump stopping when its syringe is empty) without
+  // clobbering what the user is typing, e.g. "30," or "-".
+  useEffect(() => setDraft((d) => (parseFlow(d) === current ? d : String(current))), [current]);
   const apply = (q: number) => useRun.getState().mutate((x) => x.setPumpFlow(pump.id, q));
+  const onType = (text: string) => {
+    setDraft(text);
+    const q = parseFlow(text);
+    if (q !== null && q !== current) apply(q); // takes effect immediately, no Enter needed
+  };
   const fill = sim.pumpFill(pump.id);
   return (
     <div className="pump-row">
@@ -146,14 +165,15 @@ function PumpRow({ pump }: { pump: Pump }) {
       </div>
       <div className="field-input">
         <input
-          type="number"
-          step="any"
+          type="text"
+          inputMode="decimal"
           value={draft}
           aria-label={`${pump.name} flow (µL/min)`}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={() => Number.isFinite(Number(draft)) && apply(Number(draft))}
-          onKeyDown={(e) => e.key === 'Enter' && Number.isFinite(Number(draft)) && apply(Number(draft))}
+          aria-invalid={draft.trim() !== '' && draft.trim() !== '-' && parseFlow(draft) === null}
+          onChange={(e) => onType(e.target.value)}
+          onBlur={() => setDraft(String(current))}
         />
+        <span className="unit">µL/min</span>
         <button onClick={() => apply(0)} disabled={current === 0}>
           Stop
         </button>

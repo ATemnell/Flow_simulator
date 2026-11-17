@@ -350,3 +350,13 @@ button.toggle.on {
   margin-top: 16px;
   font-size: 11px;
 }
+.hint {
+  margin: 6px 0 10px;
+  padding: 6px 10px;
+  border-left: 3px solid var(--fc-accent);
+  background: rgba(37, 99, 235, 0.08);
+}
+.field-input .unit {
+  color: var(--fc-muted);
+  white-space: nowrap;
+}
