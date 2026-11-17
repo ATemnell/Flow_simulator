@@ -1,4 +1,4 @@
-import { FLOWCELL_WIDTH, flowCellHeight, localBBox, SYRINGE, syringeLayout } from '../model/geometry';
+import { FLOWCELL_WIDTH, flowCellHeight, localBBox, SYRINGE, syringeLayout, worldBBox, worldPorts } from '../model/geometry';
 import type { Component, FlowCell, Pump, Reservoir } from '../model/types';
 import { EMPTY } from '../sim/color';
 import type { Slab } from '../sim/flowcell';
@@ -159,44 +159,78 @@ function WasteSymbol() {
   );
 }
 
-function Label({ c, live }: { c: Component; live?: ComponentLive }) {
-  let dy = 0;
-  let sub: string | undefined;
+type Side = 'above' | 'below' | 'left' | 'right';
+
+/**
+ * Which side of a part its label goes on, so it never overlaps the symbol or its pipes:
+ * across the axis of a pump, valve or flow cell (pipes attach along the axis), and opposite
+ * the port for a reservoir or waste.
+ */
+export function labelSide(c: Component): Side {
+  const horizontal = c.rotation % 180 === 0;
   switch (c.kind) {
-    case 'pump': {
-      dy = 30;
-      if (live?.syringe) {
-        const fill = live.syringe.reduce((a, p) => a + p.vol, 0);
-        sub = `${fill.toFixed(fill < 10 ? 1 : 0)} / ${c.syringeVolume_uL} µL`;
-      } else sub = `${c.syringeVolume_uL} µL syringe`;
-      break;
-    }
+    case 'pump':
+      return horizontal ? 'below' : 'right';
     case 'valve':
-      dy = c.rotation % 180 === 0 ? -28 : 0;
-      break;
     case 'flowcell':
-      dy = -flowCellHeight(c) / 2 - 8;
-      break;
+      return horizontal ? 'above' : 'right';
     case 'reservoir':
-      dy = 40;
-      sub = live?.reservoirLiquid ?? c.liquid;
-      break;
-    case 'waste':
-      dy = 33;
-      break;
+    case 'waste': {
+      const d = worldPorts(c)[0].dir;
+      return d.y < 0 ? 'below' : d.y > 0 ? 'above' : d.x < 0 ? 'right' : 'left';
+    }
+    case 'junction':
+      return 'below';
   }
-  const dx = c.kind === 'valve' && c.rotation % 180 !== 0 ? 28 : 0;
-  const anchor = dx ? 'start' : 'middle';
+}
+
+function Label({ c, live }: { c: Component; live?: ComponentLive }) {
+  let sub: string | undefined;
+  if (c.kind === 'pump') {
+    if (live?.syringe) {
+      const fill = live.syringe.reduce((a, p) => a + p.vol, 0);
+      sub = `${fill.toFixed(fill < 10 ? 1 : 0)} / ${c.syringeVolume_uL} µL`;
+    } else sub = `${c.syringeVolume_uL} µL syringe`;
+  } else if (c.kind === 'reservoir') sub = live?.reservoirLiquid ?? c.liquid;
+
+  // A vertical pump's plunger moves along its axis; use the barrel (not the plunger) to place the label.
+  const b = c.kind === 'pump' ? { ...worldBBox(c), ...barrelBox(c) } : worldBBox(c);
+  const gap = 8;
+  const lines = sub ? 2 : 1;
+  const side = labelSide(c);
+  let x = b.x + b.w / 2;
+  let y: number;
+  let anchor: 'middle' | 'start' | 'end' = 'middle';
+  if (side === 'below') y = b.y + b.h + gap + 9;
+  else if (side === 'above') y = b.y - gap - (lines - 1) * 13;
+  else {
+    x = side === 'right' ? b.x + b.w + gap : b.x - gap;
+    anchor = side === 'right' ? 'start' : 'end';
+    y = b.y + b.h / 2 + 4 - ((lines - 1) * 13) / 2;
+  }
   return (
-    <text x={c.pos.x + dx} y={c.pos.y + dy} textAnchor={anchor} className="label">
+    <text x={x} y={y} textAnchor={anchor} className="label">
       <tspan fill={theme.label} fontWeight={600}>
         {c.name}
       </tspan>
       {sub && (
-        <tspan x={c.pos.x + dx} dy={13} fill={theme.muted} fontSize={10}>
+        <tspan x={x} dy={13} fill={theme.muted} fontSize={10}>
           {sub}
         </tspan>
       )}
     </text>
   );
+}
+
+/** World box of a pump's barrel and flange (the part that does not move). */
+function barrelBox(c: Pump): { x: number; y: number; w: number; h: number } {
+  const { barrelL, nozzleR } = SYRINGE;
+  const local = { x: barrelL - 3, y: -18, w: nozzleR - barrelL + 3, h: 36 };
+  const vertical = c.rotation % 180 !== 0;
+  const w = vertical ? local.h : local.w;
+  const h = vertical ? local.w : local.h;
+  // Centre of the local box, rotated.
+  const cx = local.x + local.w / 2;
+  const off = c.rotation === 0 ? { x: cx, y: 0 } : c.rotation === 90 ? { x: 0, y: cx } : c.rotation === 180 ? { x: -cx, y: 0 } : { x: 0, y: -cx };
+  return { x: c.pos.x + off.x - w / 2, y: c.pos.y + off.y - h / 2, w, h };
 }
