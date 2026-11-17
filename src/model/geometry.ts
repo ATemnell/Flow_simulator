@@ -16,6 +16,21 @@ export interface WorldPort {
 /** Pipe wall thickness on screen, each side. */
 export const WALL = 1.5;
 
+/**
+ * Syringe pump drawing, in local coordinates (nozzle towards +x).
+ * The plunger rod is longer than the barrel, so the thumb rest sticks out even when empty.
+ */
+export const SYRINGE = { barrelL: -50, barrelR: 30, nozzleR: 50, pistonW: 4, rodLength: 88, thumbW: 4 };
+
+export function syringeLayout(fillFraction: number) {
+  const f = Math.min(1, Math.max(0, fillFraction));
+  const { barrelL, barrelR, pistonW, rodLength, thumbW } = SYRINGE;
+  // Piston front face: at the nozzle end when empty, near the back when full.
+  const piston = barrelR - f * (barrelR - barrelL - pistonW - 2);
+  const thumb = piston - pistonW - rodLength; // left edge of the thumb rest
+  return { piston, thumb, thumbW };
+}
+
 export const FLOWCELL_WIDTH = 120;
 export const FLOWCELL_PORT_PITCH = 20;
 
@@ -124,8 +139,11 @@ export interface Rect {
 /** Bounding box of a component's symbol in local (unrotated) coordinates. */
 export function localBBox(c: Component): Rect {
   switch (c.kind) {
-    case 'pump':
-      return { x: -86, y: -16, w: 138, h: 32 };
+    case 'pump': {
+      const { thumb } = syringeLayout(c.syringeVolume_uL > 0 ? c.initialFill_uL / c.syringeVolume_uL : 0);
+      const x = thumb - 2;
+      return { x, y: -16, w: SYRINGE.nozzleR + 2 - x, h: 32 };
+    }
     case 'valve':
       return { x: -22, y: -24, w: 44, h: 38 };
     case 'flowcell': {

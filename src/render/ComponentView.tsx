@@ -1,4 +1,4 @@
-import { FLOWCELL_WIDTH, flowCellHeight, localBBox } from '../model/geometry';
+import { FLOWCELL_WIDTH, flowCellHeight, localBBox, SYRINGE, syringeLayout } from '../model/geometry';
 import type { Component, FlowCell, Pump, Reservoir, Valve } from '../model/types';
 import { theme } from './theme';
 
@@ -40,18 +40,19 @@ function symbol(c: Component) {
 
 /** Syringe: barrel with liquid, piston and plunger rod; nozzle at +x. */
 function PumpSymbol({ c }: { c: Pump }) {
-  const barrelL = -50;
-  const barrelR = 30;
-  const frac = c.syringeVolume_uL > 0 ? Math.min(1, Math.max(0, c.initialFill_uL / c.syringeVolume_uL)) : 0;
-  const piston = barrelR - frac * (barrelR - barrelL - 6);
+  const { barrelL, barrelR, nozzleR, pistonW } = SYRINGE;
+  const frac = c.syringeVolume_uL > 0 ? c.initialFill_uL / c.syringeVolume_uL : 0;
+  const { piston, thumb, thumbW } = syringeLayout(frac);
   return (
     <g>
-      <rect x={barrelR} y={-3} width={20} height={6} fill={theme.body} stroke={theme.bodyStroke} />
+      <rect x={barrelR} y={-3} width={nozzleR - barrelR} height={6} fill={theme.body} stroke={theme.bodyStroke} />
       <rect x={barrelL} y={-14} width={barrelR - barrelL} height={28} rx={3} fill={theme.channel} stroke={theme.bodyStroke} strokeWidth={1.5} />
       {frac > 0 && <rect x={piston} y={-12.5} width={barrelR - piston - 1} height={25} fill={c.initialColor} />}
-      <rect x={piston - 4} y={-13} width={4} height={26} fill={theme.bodyStroke} />
-      <line x1={piston - 4} y1={0} x2={piston - 34} y2={0} stroke={theme.bodyStroke} strokeWidth={3} />
-      <rect x={piston - 38} y={-10} width={4} height={20} fill={theme.bodyStroke} />
+      {/* Finger flange at the back of the barrel. */}
+      <rect x={barrelL - 3} y={-18} width={3} height={36} rx={1} fill={theme.bodyStroke} />
+      <rect x={piston - pistonW} y={-13} width={pistonW} height={26} fill={theme.bodyStroke} />
+      <line x1={piston - pistonW} y1={0} x2={thumb + thumbW} y2={0} stroke={theme.bodyStroke} strokeWidth={3} />
+      <rect x={thumb} y={-10} width={thumbW} height={20} fill={theme.bodyStroke} />
     </g>
   );
 }
