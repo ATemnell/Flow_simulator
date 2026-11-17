@@ -1,4 +1,4 @@
-import { FLOWCELL_WIDTH, flowCellHeight, localBBox, SYRINGE, syringeLayout, worldBBox, worldPorts } from '../model/geometry';
+import { FLOWCELL_WIDTH, flowCellHeight, localBBox, localPorts, SYRINGE, syringeLayout, worldBBox, worldPorts } from '../model/geometry';
 import type { Component, FlowCell, Pump, Reservoir } from '../model/types';
 import { EMPTY } from '../sim/color';
 import type { Slab } from '../sim/flowcell';
@@ -133,6 +133,20 @@ function FlowCellSymbol({ c, chamber }: { c: FlowCell; chamber?: Slab[] }) {
       <rect x={x0} y={y0} width={W} height={H} rx={3} fill={theme.channel} />
       <g clipPath={`url(#chamber-${c.id})`}>{rects}</g>
       <rect x={x0} y={y0} width={W} height={H} rx={3} fill="none" stroke={theme.wall} strokeWidth={1.5} />
+      {/* Ports: a short channel through the body into the chamber, and a dot at the port.
+          Inlets (left) are solid dots, outlets (right) are open rings. */}
+      {localPorts(c).map((p) => {
+        const inlet = p.id.startsWith('in');
+        const xEdge = p.offset.x;
+        const xIn = inlet ? x0 : x0 + W;
+        return (
+          <g key={p.id} className="fc-port">
+            <line x1={xEdge} y1={p.offset.y} x2={xIn} y2={p.offset.y} stroke={theme.wall} strokeWidth={4} />
+            <line x1={xEdge} y1={p.offset.y} x2={xIn} y2={p.offset.y} stroke={theme.channel} strokeWidth={2} />
+            <circle cx={xEdge} cy={p.offset.y} r={3.4} fill={inlet ? theme.wall : theme.channel} stroke={theme.wall} strokeWidth={1.5} />
+          </g>
+        );
+      })}
     </g>
   );
 }
