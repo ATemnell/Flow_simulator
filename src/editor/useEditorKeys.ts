@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { deleteComponent, deletePipe, rotateComponent } from '../model/edit';
+import { useRun } from '../run/runStore';
 import { useApp } from '../ui/store';
 
 /** Global editor shortcuts. Ignored while typing in a form field. */
@@ -11,6 +12,16 @@ export function useEditorKeys() {
       const st = useApp.getState();
       const ctrl = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
+
+      if (st.mode === 'run') {
+        // Editing is locked while running.
+        if (e.key === ' ') {
+          e.preventDefault();
+          const run = useRun.getState();
+          run.setPlaying(!run.playing);
+        } else if (e.key === 'Escape') st.select(null);
+        return;
+      }
 
       if (ctrl && key === 'z' && !e.shiftKey) {
         e.preventDefault();

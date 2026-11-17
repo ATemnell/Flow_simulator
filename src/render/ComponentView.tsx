@@ -1,12 +1,23 @@
 import { FLOWCELL_WIDTH, flowCellHeight, localBBox, SYRINGE, syringeLayout } from '../model/geometry';
-import type { Component, FlowCell, Pump, Reservoir, Valve } from '../model/types';
+import type { Component, FlowCell, Pump, Reservoir } from '../model/types';
+import { EMPTY } from '../sim/color';
+import type { Plug } from '../sim/transport';
 import { theme } from './theme';
+
+/** Live state shown during a run (overrides the schematic's starting values). */
+export interface ComponentLive {
+  syringe?: Plug[];
+  valveOpen?: boolean;
+  reservoirColor?: string;
+  /** Part of an unsolvable section (e.g. pump against a closed valve). */
+  issue?: boolean;
+}
 
 /**
  * Draws one component. The symbol is drawn in local coordinates, then rotated; labels stay upright.
  * `data-hit`/`data-id` let the editor identify what was clicked.
  */
-export function ComponentView({ c, ghost = false }: { c: Component; ghost?: boolean }) {
+export function ComponentView({ c, ghost = false, live }: { c: Component; ghost?: boolean; live?: ComponentLive }) {
   const transform = `translate(${c.pos.x} ${c.pos.y}) rotate(${c.rotation})`;
   const b = localBBox(c);
   return (
@@ -14,23 +25,24 @@ export function ComponentView({ c, ghost = false }: { c: Component; ghost?: bool
       <g transform={transform}>
         {/* Transparent hit area so the whole symbol is clickable, not just its strokes. */}
         <rect x={b.x} y={b.y} width={b.w} height={b.h} fill="transparent" />
-        {symbol(c)}
+        {live?.issue && <rect x={b.x - 5} y={b.y - 5} width={b.w + 10} height={b.h + 10} rx={6} fill="var(--fc-issue-bg)" stroke="var(--fc-issue)" strokeWidth={1.5} />}
+        {symbol(c, live)}
       </g>
-      {c.kind !== 'junction' && <Label c={c} />}
+      {c.kind !== 'junction' && <Label c={c} live={live} />}
     </g>
   );
 }
 
-function symbol(c: Component) {
+function symbol(c: Component, live?: ComponentLive) {
   switch (c.kind) {
     case 'pump':
-      return <PumpSymbol c={c} />;
+      return <PumpSymbol c={c} contents={live?.syringe} />;
     case 'valve':
-      return <ValveSymbol c={c} />;
+      return <ValveSymbol open={live?.valveOpen ?? c.initialOpen} />;
     case 'flowcell':
       return <FlowCellSymbol c={c} />;
     case 'reservoir':
-      return <ReservoirSymbol c={c} />;
+      return <ReservoirSymbol c={c} color={live?.reservoirColor ?? c.color} />;
     case 'waste':
       return <WasteSymbol />;
     case 'junction':
@@ -38,16 +50,29 @@ function symbol(c: Component) {
   }
 }
 
-/** Syringe: barrel with liquid, piston and plunger rod; nozzle at +x. */
-function PumpSymbol({ c }: { c: Pump }) {
+const syringeContents = (c: Pump, contents?: Plug[]): Plug[] =>
+  contents ?? (c.initialFill_uL > 0 ? [{ color: c.initialColor, vol: c.initialFill_uL }] : []);
+
+/** Syringe: barrel with liquid (stacked from the nozzle), piston and plunger rod; nozzle at +x. */
+function PumpSymbol({ c, contents }: { c: Pump; contents?: Plug[] }) {
   const { barrelL, barrelR, nozzleR, pistonW } = SYRINGE;
-  const frac = c.syringeVolume_uL > 0 ? c.initialFill_uL / c.syringeVolume_uL : 0;
-  const { piston, thumb, thumbW } = syringeLayout(frac);
+  const plugs = syringeContents(c, contents);
+  const fill = plugs.reduce((a, p) => a + p.vol, 0);
+  const cap = c.syringeVolume_uL;
+  const { piston, thumb, thumbW } = syringeLayout(cap > 0 ? fill / cap : 0);
+  // Liquid plugs from the nozzle end backwards to the piston.
+  const usable = barrelR - 1 - piston;
+  let x = barrelR - 1;
+  const bands = plugs.map((p, i) => {
+    const w = fill > 0 ? (p.vol / fill) * usable : 0;
+    x -= w;
+    return p.color === EMPTY || w <= 0 ? null : <rect key={i} x={x} y={-12.5} width={w + 0.3} height={25} fill={p.color} />;
+  });
   return (
     <g>
       <rect x={barrelR} y={-3} width={nozzleR - barrelR} height={6} fill={theme.body} stroke={theme.bodyStroke} />
       <rect x={barrelL} y={-14} width={barrelR - barrelL} height={28} rx={3} fill={theme.channel} stroke={theme.bodyStroke} strokeWidth={1.5} />
-      {frac > 0 && <rect x={piston} y={-12.5} width={barrelR - piston - 1} height={25} fill={c.initialColor} />}
+      {bands}
       {/* Finger flange at the back of the barrel. */}
       <rect x={barrelL - 3} y={-18} width={3} height={36} rx={1} fill={theme.bodyStroke} />
       <rect x={piston - pistonW} y={-13} width={pistonW} height={26} fill={theme.bodyStroke} />
@@ -58,8 +83,7 @@ function PumpSymbol({ c }: { c: Pump }) {
 }
 
 /** Two-way valve: bow-tie, filled when closed. */
-function ValveSymbol({ c }: { c: Valve }) {
-  const open = c.initialOpen;
+function ValveSymbol({ open }: { open: boolean }) {
   const fill = open ? theme.valveOpen : theme.valveClosed;
   return (
     <g>
@@ -82,10 +106,10 @@ function FlowCellSymbol({ c }: { c: FlowCell }) {
 }
 
 /** Open beaker with a dip tube; the port is at the top of the tube. */
-function ReservoirSymbol({ c }: { c: Reservoir }) {
+function ReservoirSymbol({ color }: { c: Reservoir; color: string }) {
   return (
     <g>
-      <rect x={-21} y={-6} width={42} height={30} fill={c.color} opacity={0.85} />
+      <rect x={-21} y={-6} width={42} height={30} fill={color} opacity={0.85} />
       <path d="M -24 -22 L -22 25 L 22 25 L 24 -22" fill="none" stroke={theme.bodyStroke} strokeWidth={2} strokeLinejoin="round" />
       <line x1={0} y1={-30} x2={0} y2={16} stroke={theme.wall} strokeWidth={3} />
     </g>
@@ -103,14 +127,18 @@ function WasteSymbol() {
   );
 }
 
-function Label({ c }: { c: Component }) {
+function Label({ c, live }: { c: Component; live?: ComponentLive }) {
   let dy = 0;
   let sub: string | undefined;
   switch (c.kind) {
-    case 'pump':
+    case 'pump': {
       dy = 30;
-      sub = `${c.syringeVolume_uL} µL syringe`;
+      if (live?.syringe) {
+        const fill = live.syringe.reduce((a, p) => a + p.vol, 0);
+        sub = `${fill.toFixed(fill < 10 ? 1 : 0)} / ${c.syringeVolume_uL} µL`;
+      } else sub = `${c.syringeVolume_uL} µL syringe`;
       break;
+    }
     case 'valve':
       dy = c.rotation % 180 === 0 ? -28 : 0;
       break;

@@ -6,6 +6,7 @@ import type { PortRef, Schematic, Vec } from '../model/types';
 import { ComponentView } from '../render/ComponentView';
 import { PipeView, pointsToPath } from '../render/PipeView';
 import { theme } from '../render/theme';
+import { CHEVRON_SPACING, useRun } from '../run/runStore';
 import { useApp } from '../ui/store';
 
 interface View {
@@ -48,6 +49,11 @@ export function EditorCanvas() {
   const selection = useApp((s) => s.selection);
   const tool = useApp((s) => s.tool);
   const draft = useApp((s) => s.draft);
+  const mode = useApp((s) => s.mode);
+  const sim = useRun((s) => (mode === 'run' ? s.sim : null));
+  useRun((s) => s.frame); // re-render every simulation frame
+  const arrowPhase = useRun((s) => s.arrowPhase);
+  const issueComps = new Set(sim?.solution.issues.flatMap((i) => i.components) ?? []);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1.6 });
@@ -171,6 +177,15 @@ export function EditorCanvas() {
       return;
     }
     if (e.button !== 0) return;
+
+    if (st.mode === 'run') {
+      // Running: no editing. Click selects (for flow readouts), drag pans.
+      const hit = el.closest('[data-hit]');
+      const kind = hit?.getAttribute('data-hit');
+      const id = hit?.getAttribute('data-id');
+      st.select(kind === 'comp' && id ? { type: 'comp', id } : kind === 'pipe' && id ? { type: 'pipe', id } : null);
+      return startPan();
+    }
 
     if (st.tool.type === 'place') {
       const c = makeComponent(s, st.tool.kind, world);
@@ -313,7 +328,7 @@ export function EditorCanvas() {
   const selComp = selection?.type === 'comp' ? schematic.components.find((c) => c.id === selection.id) : undefined;
   const selBox = selComp ? worldBBox(selComp) : null;
 
-  const cursorClass = tool.type === 'select' ? 'tool-select' : tool.type === 'pipe' ? 'tool-pipe' : 'tool-place';
+  const cursorClass = mode === 'run' ? 'mode-run' : tool.type === 'select' ? 'tool-select' : tool.type === 'pipe' ? 'tool-pipe' : 'tool-place';
 
   return (
     <svg
@@ -342,10 +357,33 @@ export function EditorCanvas() {
             innerDiameter_mm={p.innerDiameter_mm}
             hops={hops.get(p.id)}
             selected={selection?.type === 'pipe' && selection.id === p.id}
+            live={
+              sim
+                ? {
+                    plugs: sim.liquids.pipes.get(p.id) ?? [],
+                    dir: Math.sign(sim.solution.pipeFlow.get(p.id) ?? 0),
+                    phase: arrowPhase.get(p.id) ?? 0,
+                    spacing: CHEVRON_SPACING,
+                  }
+                : undefined
+            }
           />
         ))}
         {schematic.components.map((c) => (
-          <ComponentView key={c.id} c={c} />
+          <ComponentView
+            key={c.id}
+            c={c}
+            live={
+              sim
+                ? {
+                    syringe: c.kind === 'pump' ? sim.liquids.syringes.get(c.id) : undefined,
+                    valveOpen: c.kind === 'valve' ? sim.inputs.valveOpen[c.id] : undefined,
+                    reservoirColor: c.kind === 'reservoir' ? sim.reservoirColor.get(c.id) : undefined,
+                    issue: issueComps.has(c.id),
+                  }
+                : undefined
+            }
+          />
         ))}
         {selBox && (
           <rect

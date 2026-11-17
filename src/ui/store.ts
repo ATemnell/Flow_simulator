@@ -11,7 +11,12 @@ export interface Draft {
   waypoints: Vec[];
 }
 
+export type Mode = 'edit' | 'run';
+
 interface AppState {
+  /** Edit the schematic, or run (animate) it. Editing is disabled while running. */
+  mode: Mode;
+  setMode: (m: Mode) => void;
   schematic: Schematic;
   /** Bumped whenever a different document is loaded (used to re-fit the view). */
   docVersion: number;
@@ -46,6 +51,11 @@ export const emptySchematic = (): Schematic => ({ version: SCHEMATIC_VERSION, na
 const HISTORY_LIMIT = 200;
 
 export const useApp = create<AppState>((set, get) => ({
+  mode: 'edit',
+  setMode: (mode) => {
+    if (get().draft) get().cancelGesture();
+    set({ mode, tool: { type: 'select' }, draft: null });
+  },
   schematic: twoInletFlowCell,
   docVersion: 0,
   past: [],
@@ -57,7 +67,7 @@ export const useApp = create<AppState>((set, get) => ({
   error: null,
 
   load: (schematic) =>
-    set((st) => ({ schematic, docVersion: st.docVersion + 1, past: [], future: [], gestureBase: null, selection: null, draft: null, error: null, tool: { type: 'select' } })),
+    set((st) => ({ schematic, docVersion: st.docVersion + 1, past: [], future: [], gestureBase: null, selection: null, draft: null, error: null, tool: { type: 'select' }, mode: 'edit' })),
 
   commit: (s) => {
     const cur = get().schematic;

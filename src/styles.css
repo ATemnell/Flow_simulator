@@ -262,3 +262,91 @@ button:disabled {
   background: var(--panel);
   border-top: 1px solid var(--border);
 }
+
+/* ---------- run mode ---------- */
+:root {
+  --fc-issue: #dc2626;
+  --fc-issue-bg: rgba(220, 38, 38, 0.1);
+}
+.canvas.mode-run {
+  cursor: default;
+}
+.segmented {
+  display: inline-flex;
+  margin-left: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.segmented button {
+  border: none;
+  border-radius: 0;
+  padding: 4px 14px;
+}
+.segmented button + button {
+  border-left: 1px solid var(--border);
+}
+.segmented button.active {
+  background: var(--fc-accent);
+  color: #fff;
+}
+button.primary {
+  background: var(--fc-accent);
+  border-color: var(--fc-accent);
+  color: #fff;
+  min-width: 64px;
+}
+button.primary:hover {
+  filter: brightness(1.08);
+}
+.transport {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.clock {
+  font: 12px ui-monospace, monospace;
+  color: var(--fc-muted);
+}
+.transport .clock {
+  margin-left: auto;
+  font-size: 15px;
+  color: var(--text);
+}
+.issues {
+  margin: 8px 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--fc-issue);
+  background: var(--fc-issue-bg);
+  color: #8a1c1c;
+}
+.issues p {
+  margin: 4px 0;
+}
+.pump-row {
+  margin-bottom: 10px;
+}
+.pump-head {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.pump-head .note {
+  margin: 0;
+}
+button.toggle {
+  min-width: 72px;
+}
+button.toggle.on {
+  border-color: #16a34a;
+  color: #15803d;
+}
+.events {
+  list-style: none;
+  padding: 0;
+}
+.note.small {
+  margin-top: 16px;
+  font-size: 11px;
+}
