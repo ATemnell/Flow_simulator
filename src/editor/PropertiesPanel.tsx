@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { deleteComponent, deletePipe, rotateComponent, updateComponent, updatePipe } from '../model/edit';
-import { pipeLength_mm, pipeVolume_uL } from '../model/geometry';
+import { channelArea, pipeLength_mm, pipeVolume_uL } from '../model/geometry';
 import type { Component, Pipe, Schematic } from '../model/types';
 import { useApp } from '../ui/store';
 
@@ -227,7 +227,11 @@ function PipeProps({ s, p }: { s: Schematic; p: Pipe }) {
       <p className="note">
         {name(p.from.comp)} → {name(p.to.comp)}
       </p>
-      <Field label="Inner diameter" type="number" unit="mm" min={0.05} step={0.05} value={p.innerDiameter_mm} validate={positive} onCommit={(v) => commit(updatePipe(s, p.id, { innerDiameter_mm: Number(v) }))} />
+      <Field label="Width" type="number" unit="mm" min={0.01} step={0.05} value={p.width_mm} validate={positive} onCommit={(v) => commit(updatePipe(s, p.id, { width_mm: Number(v) }))} />
+      <Field label="Depth" type="number" unit="mm" min={0.01} step={0.05} value={p.depth_mm} validate={positive} onCommit={(v) => commit(updatePipe(s, p.id, { depth_mm: Number(v) }))} />
+      <Row label="Cross-section">
+        <output>{channelArea(p).toFixed(3)} mm² (rectangular)</output>
+      </Row>
       <Row label="Length">
         <output>{length.toFixed(0)} mm</output>
       </Row>

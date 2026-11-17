@@ -3,13 +3,13 @@
  *
  * Syringe pumps impose flow rates; reservoirs and waste are open to atmosphere (pressure 0).
  * Liquid is incompressible, so at every node inflow = outflow (Kirchhoff's current law).
- * Where liquid can take several routes, it splits according to hydraulic conductance:
- * Hagen–Poiseuille gives G ∝ d⁴ / L for a round pipe (viscosity is the same everywhere and
+ * Where liquid can take several routes, it splits according to hydraulic conductance of the
+ * rectangular channels, G ∝ a³·b·(1 − 0.63·a/b) / L (viscosity is the same everywhere and
  * cancels out, so pressures here are relative, not in pascals).
  *
  * Units: flows in µL/min. A pipe's flow is positive when liquid moves from its `from` end to its `to` end.
  */
-import { localPorts, pipeLength_mm } from '../model/geometry';
+import { channelConductance, localPorts, pipeLength_mm } from '../model/geometry';
 import type { Schematic } from '../model/types';
 
 /** The controllable state at one instant. Missing entries mean pump idle / valve at its initial state. */
@@ -36,8 +36,9 @@ export interface FlowSolution {
   issues: FlowIssue[];
 }
 
-/** Conductance of the short internal path through an open valve or across a flow cell chamber (≈ a 1 mm × 1 mm pipe). */
-const INTERNAL_G = 1;
+/** Conductance of the short internal path through an open valve or across a flow cell chamber
+ * (≈ a default 0.3 × 0.35 mm channel only 0.36 mm long, i.e. negligible next to real channels). */
+const INTERNAL_G = 1e-3;
 const MIN_LENGTH_MM = 1e-3;
 
 export function defaultInputs(s: Schematic): FlowInputs {
@@ -95,8 +96,7 @@ export function solveFlows(s: Schematic, inputs: FlowInputs): FlowSolution {
     } catch {
       continue; // dangling pipe — validation reports it
     }
-    const d = p.innerDiameter_mm;
-    edges.push({ a: key(p.from.comp, p.from.port), b: key(p.to.comp, p.to.port), g: (d * d * d * d) / Math.max(len, MIN_LENGTH_MM), pipeId: p.id });
+    edges.push({ a: key(p.from.comp, p.from.port), b: key(p.to.comp, p.to.port), g: channelConductance(p.width_mm, p.depth_mm, Math.max(len, MIN_LENGTH_MM)), pipeId: p.id });
   }
 
   // Connected sections (union–find).

@@ -19,8 +19,8 @@ export const twoInletFlowCell: Schematic = {
     { id: 'w1', kind: 'waste', name: 'Waste', pos: { x: 520, y: 380 }, rotation: 0 },
   ],
   pipes: [
-    { id: 'pipe1', from: { comp: 'resA', port: 'p' }, to: { comp: 'v1', port: 'a' }, waypoints: [{ x: 100, y: 190 }], innerDiameter_mm: 1 },
-    { id: 'pipe2', from: { comp: 'v1', port: 'b' }, to: { comp: 'fc1', port: 'in0' }, waypoints: [], innerDiameter_mm: 1 },
+    { id: 'pipe1', from: { comp: 'resA', port: 'p' }, to: { comp: 'v1', port: 'a' }, waypoints: [{ x: 100, y: 190 }], width_mm: 0.3, depth_mm: 0.35 },
+    { id: 'pipe2', from: { comp: 'v1', port: 'b' }, to: { comp: 'fc1', port: 'in0' }, waypoints: [], width_mm: 0.3, depth_mm: 0.35 },
     {
       id: 'pipe3',
       from: { comp: 'p1', port: 'out' },
@@ -29,11 +29,11 @@ export const twoInletFlowCell: Schematic = {
         { x: 300, y: 80 },
         { x: 300, y: 210 },
       ],
-      innerDiameter_mm: 1,
+      width_mm: 0.3, depth_mm: 0.35,
     },
-    { id: 'pipe4', from: { comp: 'fc1', port: 'out0' }, to: { comp: 'j1', port: 'j' }, waypoints: [], innerDiameter_mm: 1 },
-    { id: 'pipe5', from: { comp: 'j1', port: 'j' }, to: { comp: 'p2', port: 'out' }, waypoints: [], innerDiameter_mm: 1 },
-    { id: 'pipe6', from: { comp: 'j1', port: 'j' }, to: { comp: 'v2', port: 'a' }, waypoints: [], innerDiameter_mm: 1 },
-    { id: 'pipe7', from: { comp: 'v2', port: 'b' }, to: { comp: 'w1', port: 'p' }, waypoints: [], innerDiameter_mm: 1 },
+    { id: 'pipe4', from: { comp: 'fc1', port: 'out0' }, to: { comp: 'j1', port: 'j' }, waypoints: [], width_mm: 0.3, depth_mm: 0.35 },
+    { id: 'pipe5', from: { comp: 'j1', port: 'j' }, to: { comp: 'p2', port: 'out' }, waypoints: [], width_mm: 0.3, depth_mm: 0.35 },
+    { id: 'pipe6', from: { comp: 'j1', port: 'j' }, to: { comp: 'v2', port: 'a' }, waypoints: [], width_mm: 0.3, depth_mm: 0.35 },
+    { id: 'pipe7', from: { comp: 'v2', port: 'b' }, to: { comp: 'w1', port: 'p' }, waypoints: [], width_mm: 0.3, depth_mm: 0.35 },
   ],
 };

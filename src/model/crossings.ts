@@ -43,7 +43,7 @@ export function findHops(s: Schematic): Map<string, Hop[]> {
     for (let j = 0; j < i; j++) {
       const lower = polys[j];
       if (!lower) continue;
-      const r = pipeVisualWidth(lower.p.innerDiameter_mm) / 2 + pipeVisualWidth(upper.p.innerDiameter_mm) / 2 + 2 * WALL + 2;
+      const r = pipeVisualWidth(lower.p.width_mm) / 2 + pipeVisualWidth(upper.p.width_mm) / 2 + 2 * WALL + 2;
       for (let a = 0; a < upper.pts.length - 1; a++) {
         for (let b = 0; b < lower.pts.length - 1; b++) {
           const hit = segIntersect(upper.pts[a], upper.pts[a + 1], lower.pts[b], lower.pts[b + 1]);

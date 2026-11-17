@@ -2,7 +2,7 @@
  * Pure editing operations on a Schematic. Every function returns a new schematic
  * (never mutates its input), which makes undo/redo a simple snapshot stack.
  */
-import { localPorts, portPosition, worldPorts } from './geometry';
+import { DEFAULT_CHANNEL, localPorts, portPosition, worldPorts } from './geometry';
 import type { Component, ComponentKind, Pipe, PortRef, Rotation, Schematic, Vec } from './types';
 
 export const GRID = 10;
@@ -102,7 +102,8 @@ function mergeAtJunction(s: Schematic, jid: string, a: Pipe, b: Pipe): Schematic
     from: aIn.from,
     to: bOut.to,
     waypoints: [...aIn.waypoints, jpos, ...bOut.waypoints],
-    innerDiameter_mm: a.innerDiameter_mm,
+    width_mm: a.width_mm,
+    depth_mm: a.depth_mm,
   };
   const pipes = s.pipes.filter((p) => p.id !== a.id && p.id !== b.id);
   const next = { ...s, pipes: [...pipes, merged], components: s.components.filter((c) => c.id !== jid) };
@@ -222,9 +223,15 @@ export function simplifyPipe(s: Schematic, id: string): Schematic {
   return updatePipe(s, id, { waypoints: wps });
 }
 
-export function addPipe(s: Schematic, from: PortRef, to: PortRef, waypoints: Vec[], innerDiameter_mm = 1): { schematic: Schematic; id: string } {
+export function addPipe(
+  s: Schematic,
+  from: PortRef,
+  to: PortRef,
+  waypoints: Vec[],
+  { width_mm, depth_mm } = DEFAULT_CHANNEL,
+): { schematic: Schematic; id: string } {
   const id = nextId(s.pipes.map((p) => p.id), 'pipe');
-  const next = { ...s, pipes: [...s.pipes, { id, from, to, waypoints, innerDiameter_mm }] };
+  const next = { ...s, pipes: [...s.pipes, { id, from, to, waypoints, width_mm, depth_mm }] };
   return { schematic: simplifyPipe(next, id), id };
 }
 

@@ -118,15 +118,32 @@ export function pipeLength_mm(s: Schematic, pipe: Pipe): number {
   return polylineLength(pipePoints(s, pipe));
 }
 
-/** Internal volume in µL (1 mm³ = 1 µL). */
-export function pipeVolume_uL(s: Schematic, pipe: Pipe): number {
-  const r = pipe.innerDiameter_mm / 2;
-  return Math.PI * r * r * pipeLength_mm(s, pipe);
+/** Default channel cross-section (mm). */
+export const DEFAULT_CHANNEL = { width_mm: 0.3, depth_mm: 0.35 };
+
+/** Cross-section area in mm² (the channels are rectangular). */
+export function channelArea(p: Pick<Pipe, 'width_mm' | 'depth_mm'>): number {
+  return p.width_mm * p.depth_mm;
 }
 
-/** On-screen width of the liquid channel for a given inner diameter. */
-export function pipeVisualWidth(innerDiameter_mm: number): number {
-  return Math.min(24, Math.max(5, innerDiameter_mm * 6));
+/** Internal volume in µL (1 mm³ = 1 µL). */
+export function pipeVolume_uL(s: Schematic, pipe: Pipe): number {
+  return channelArea(pipe) * pipeLength_mm(s, pipe);
+}
+
+/**
+ * Hydraulic conductance of a rectangular channel (relative units; viscosity cancels out).
+ * Standard approximation for laminar flow: G = a³·b·(1 − 0.63·a/b) / (12·L), a ≤ b the sides.
+ */
+export function channelConductance(width_mm: number, depth_mm: number, length_mm: number): number {
+  const a = Math.min(width_mm, depth_mm);
+  const b = Math.max(width_mm, depth_mm);
+  return (a * a * a * b * (1 - (0.63 * a) / b)) / (12 * length_mm);
+}
+
+/** On-screen width of the liquid channel for a given channel width (mm). */
+export function pipeVisualWidth(width_mm: number): number {
+  return Math.min(24, Math.max(5, 4 + width_mm * 12));
 }
 
 export interface Rect {

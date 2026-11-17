@@ -38,7 +38,15 @@ export function parseSchematic(json: string): Schematic {
   if (raw.version !== SCHEMATIC_VERSION) throw new Error(`Unsupported schematic version ${raw.version}`);
   if (!Array.isArray(raw.components) || !Array.isArray(raw.pipes)) throw new Error('Schematic needs "components" and "pipes" arrays');
 
-  const s: Schematic = { version: raw.version, name: String(raw.name ?? 'Untitled'), components: raw.components, pipes: raw.pipes };
+  // Older files described round pipes by diameter; read them as square channels of that size.
+  const pipes = raw.pipes.map((p: any) => {
+    if (p && p.width_mm === undefined && typeof p.innerDiameter_mm === 'number') {
+      const { innerDiameter_mm, ...rest } = p;
+      return { ...rest, width_mm: innerDiameter_mm, depth_mm: innerDiameter_mm };
+    }
+    return p;
+  });
+  const s: Schematic = { version: raw.version, name: String(raw.name ?? 'Untitled'), components: raw.components, pipes };
   const problems = validateSchematic(s);
   if (problems.length) throw new Error(problems.join('\n'));
   return s;
@@ -63,7 +71,7 @@ export function validateSchematic(s: Schematic): string[] {
   for (const p of s.pipes) {
     if (pipeIds.has(p.id)) problems.push(`Duplicate pipe id '${p.id}'`);
     pipeIds.add(p.id);
-    if (!(p.innerDiameter_mm > 0)) problems.push(`Pipe '${p.id}' needs a positive inner diameter`);
+    if (!(p.width_mm > 0) || !(p.depth_mm > 0)) problems.push(`Pipe '${p.id}' needs a positive width and depth`);
     for (const end of [p.from, p.to]) {
       const c = byId.get(end.comp);
       if (!c) {

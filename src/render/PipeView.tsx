@@ -22,7 +22,7 @@ export interface PipeLive {
 interface Props {
   id: string;
   points: Vec[];
-  innerDiameter_mm: number;
+  width_mm: number;
   hops?: Hop[];
   selected?: boolean;
   live?: PipeLive;
@@ -34,8 +34,8 @@ interface Props {
  * it bridges over it with a semicircular hop. During a run the channel is filled with the
  * liquid plugs, and chevrons show the flow direction.
  */
-export function PipeView({ id, points, innerDiameter_mm, hops, selected, live }: Props) {
-  const w = pipeVisualWidth(innerDiameter_mm);
+export function PipeView({ id, points, width_mm, hops, selected, live }: Props) {
+  const w = pipeVisualWidth(width_mm);
   const d = hoppedPath(points, hops);
   return (
     <g className="pipe">

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { channelArea } from '../model/geometry';
 import type { Pump, Reservoir, Valve } from '../model/types';
 import { fmtTime } from '../script/ScriptDrawer';
 import { useApp } from '../ui/store';
@@ -165,7 +166,7 @@ export function RunPanel() {
             Flow {fmt(Math.abs(sim.solution.pipeFlow.get(selPipe.id) ?? 0), 2)} µL/min
             {(sim.solution.pipeFlow.get(selPipe.id) ?? 0) < 0 ? ' (towards ' + nameOf(selPipe.from.comp) + ')' : (sim.solution.pipeFlow.get(selPipe.id) ?? 0) > 0 ? ' (towards ' + nameOf(selPipe.to.comp) + ')' : ''}
             <br />
-            Speed {fmt(Math.abs(sim.solution.pipeFlow.get(selPipe.id) ?? 0) / 60 / ((Math.PI * selPipe.innerDiameter_mm ** 2) / 4), 2)} mm/s
+            Speed {fmt(Math.abs(sim.solution.pipeFlow.get(selPipe.id) ?? 0) / 60 / channelArea(selPipe), 2)} mm/s
           </p>
         </>
       )}

@@ -80,7 +80,7 @@ describe('two-inlet flow cell example', () => {
     expect(sim.liquids.chambers.get('fc1')).toEqual([{ bands: [{ color: EMPTY, frac: 1 }], vol: 20 }]);
     sim.setPumpFlow('p1', 30);
     sim.setPumpFlow('p2', -60);
-    sim.step(445); // both liquids have just arrived (≈ 220 µL route at 30 µL/min)
+    sim.step(62); // both liquids have just arrived (≈ 29 µL routes at 30 µL/min ≈ 59 s); the 20 µL chamber takes 20 s to cross
     const ch = sim.liquids.chambers.get('fc1')!;
     expect(ch.length).toBeGreaterThan(1); // liquid at the inlet side, air still at the outlet side
     expect(ch[ch.length - 1].bands[0].color).toBe(EMPTY);
@@ -101,10 +101,10 @@ describe('two outlets take separate slices', () => {
     name: 't',
     components: comps,
     pipes: [
-      { id: 'g', from: { comp: 'rg', port: 'p' }, to: { comp: 'fc', port: 'in0' }, waypoints: [{ x: 60, y: -10 }], innerDiameter_mm: 1 },
-      { id: 'r', from: { comp: 'rr', port: 'p' }, to: { comp: 'fc', port: 'in1' }, waypoints: [{ x: 60, y: 10 }], innerDiameter_mm: 1 },
-      { id: 'a', from: { comp: 'fc', port: 'out0' }, to: { comp: 'pa', port: 'out' }, waypoints: [], innerDiameter_mm: 1 },
-      { id: 'b', from: { comp: 'fc', port: 'out1' }, to: { comp: 'pb', port: 'out' }, waypoints: [], innerDiameter_mm: 1 },
+      { id: 'g', from: { comp: 'rg', port: 'p' }, to: { comp: 'fc', port: 'in0' }, waypoints: [{ x: 60, y: -10 }], width_mm: 1, depth_mm: 1 },
+      { id: 'r', from: { comp: 'rr', port: 'p' }, to: { comp: 'fc', port: 'in1' }, waypoints: [{ x: 60, y: 10 }], width_mm: 1, depth_mm: 1 },
+      { id: 'a', from: { comp: 'fc', port: 'out0' }, to: { comp: 'pa', port: 'out' }, waypoints: [], width_mm: 1, depth_mm: 1 },
+      { id: 'b', from: { comp: 'fc', port: 'out1' }, to: { comp: 'pb', port: 'out' }, waypoints: [], width_mm: 1, depth_mm: 1 },
     ],
   };
 

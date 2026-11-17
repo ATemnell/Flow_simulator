@@ -55,19 +55,19 @@ describe('plug list helpers', () => {
   });
 });
 
-/** Reservoir → pipe (100 mm, d=1) → pump. */
+/** Reservoir → pipe (100 mm, 1 × 1 mm = 100 µL) → pump. */
 function line(): Schematic {
   const components: Component[] = [
     { id: 'R', kind: 'reservoir', name: 'R', pos: { x: 0, y: 30 }, rotation: 0, liquid: 'L', color: GREEN },
     { id: 'P', kind: 'pump', name: 'P', pos: { x: 150, y: 0 }, rotation: 180, syringeVolume_uL: 500, initialFill_uL: 0, initialColor: '#ffffff' },
   ];
-  return { version: 1, name: 't', components, pipes: [{ id: 'a', from: { comp: 'R', port: 'p' }, to: { comp: 'P', port: 'out' }, waypoints: [], innerDiameter_mm: 1 }] };
+  return { version: 1, name: 't', components, pipes: [{ id: 'a', from: { comp: 'R', port: 'p' }, to: { comp: 'P', port: 'out' }, waypoints: [], width_mm: 1, depth_mm: 1 }] };
 }
 
 describe('simulation', () => {
   it('a liquid front advances by volume and the syringe fills', () => {
     const s = line();
-    const V = pipeVolume_uL(s, s.pipes[0]); // about 78.5 µL
+    const V = pipeVolume_uL(s, s.pipes[0]); // 100 µL
     const sim = new Simulation(s);
     sim.setPumpFlow('P', -60); // aspirate 60 µL/min = 1 µL/s
     sim.step(30);

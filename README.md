@@ -52,6 +52,6 @@ Wait 2
 
 ## How the simulation works
 
-- **Flow:** `src/sim/solver.ts`. Pumps impose flow rates, while reservoirs and waste are open ends. Flow splits between parallel paths by d⁴/L (Hagen–Poiseuille). A setup that can't move, such as a pump pushing against a closed valve, is reported instead of solved.
+- **Flow:** `src/sim/solver.ts`. Pumps impose flow rates, while reservoirs and waste are open ends. Pipes are rectangular channels (width × depth, default 0.3 × 0.35 mm). Flow splits between parallel paths by the laminar conductance of a rectangular channel, a³·b·(1 − 0.63·a/b)/(12·L), with a ≤ b the two sides. A setup that can't move, such as a pump pushing against a closed valve, is reported instead of solved.
 - **Transport:** `src/sim/transport.ts`. Each pipe holds ordered plugs of liquid, so a new liquid's front pushes the old one ahead of it. Where streams merge at a junction, they blend.
 - **Flow cell:** `src/sim/flowcell.ts`. Inlet streams flow side by side across the chamber (20 µL) as bands, each as wide as its share of the flow. Each outlet takes its own slice of the bands.

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type WheelEvent } from 'react';
 import { findHops } from '../model/crossings';
 import { addComponent, addPipe, dragSegment, makeComponent, moveComponent, nearestSegment, portIsFree, simplifyPipe, snap, snapVec, splitPipe, GRID } from '../model/edit';
-import { pipePoints, pipeVisualWidth, portPosition, worldBBox, worldPorts } from '../model/geometry';
+import { DEFAULT_CHANNEL, pipePoints, pipeVisualWidth, portPosition, worldBBox, worldPorts } from '../model/geometry';
 import type { PortRef, Schematic, Vec } from '../model/types';
 import { ComponentView } from '../render/ComponentView';
 import { PipeView, pointsToPath } from '../render/PipeView';
@@ -354,7 +354,7 @@ export function EditorCanvas() {
             key={p.id}
             id={p.id}
             points={pts}
-            innerDiameter_mm={p.innerDiameter_mm}
+            width_mm={p.width_mm}
             hops={hops.get(p.id)}
             selected={selection?.type === 'pipe' && selection.id === p.id}
             live={
@@ -408,7 +408,7 @@ export function EditorCanvas() {
             fill="none"
             stroke={theme.accent}
             strokeOpacity={0.7}
-            strokeWidth={pipeVisualWidth(1)}
+            strokeWidth={pipeVisualWidth(DEFAULT_CHANNEL.width_mm)}
             strokeLinejoin="round"
             strokeDasharray="6 4"
             pointerEvents="none"

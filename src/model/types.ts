@@ -71,7 +71,9 @@ export interface Pipe {
   from: PortRef;
   to: PortRef;
   waypoints: Vec[];
-  innerDiameter_mm: number;
+  /** Rectangular channel cross-section. */
+  width_mm: number;
+  depth_mm: number;
 }
 
 export interface Schematic {

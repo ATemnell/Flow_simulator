@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { channelArea } from '../model/geometry';
 import type { Schematic } from '../model/types';
 import type { CompiledScript } from '../script/compile';
 import { ScriptRunner } from '../script/runner';
@@ -109,7 +110,7 @@ export const useRun = create<RunState>((set, get) => ({
     const cur = runner ? runner.sim : sim;
     for (const p of cur.schematic.pipes) {
       const q = cur.solution.pipeFlow.get(p.id) ?? 0;
-      const area = (Math.PI * p.innerDiameter_mm * p.innerDiameter_mm) / 4;
+      const area = channelArea(p);
       const v = q / 60 / area; // mm/s along from→to
       const step = chevronSpeed(v, speed) * Math.sign(v) * realDt;
       const ph = (arrowPhase.get(p.id) ?? 0) + step;

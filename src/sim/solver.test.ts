@@ -18,12 +18,14 @@ const pump = (id: string, x: number, y: number, rotation: 0 | 180 = 0): Componen
 });
 const valve = (id: string, x: number, y: number, open = true): Component => ({ id, kind: 'valve', name: id, pos: { x, y }, rotation: 0, initialOpen: open });
 const junction = (id: string, x: number, y: number): Component => ({ id, kind: 'junction', name: id, pos: { x, y }, rotation: 0 });
-const pipe = (id: string, from: string, fromPort: string, to: string, toPort: string, d = 1, waypoints: Pipe['waypoints'] = []): Pipe => ({
+/** Channel of the default 0.3 × 0.35 mm cross-section, optionally scaled. */
+const pipe = (id: string, from: string, fromPort: string, to: string, toPort: string, scale = 1, waypoints: Pipe['waypoints'] = []): Pipe => ({
   id,
   from: { comp: from, port: fromPort },
   to: { comp: to, port: toPort },
   waypoints,
-  innerDiameter_mm: d,
+  width_mm: 0.3 * scale,
+  depth_mm: 0.35 * scale,
 });
 const schematic = (components: Component[], pipes: Pipe[]): Schematic => ({ version: 1, name: 't', components, pipes });
 const run = (s: Schematic, pumpFlow: Record<string, number>, valveOpen: Record<string, boolean> = {}) => {
@@ -70,8 +72,9 @@ describe('series', () => {
   });
 });
 
-describe('parallel pipes split by conductance (d⁴/L)', () => {
-  // Reservoir → J1; J1 → J2 via two equal-length pipes of d=1 and d=2; J2 → pump aspirating 17.
+describe('parallel channels split by conductance (a³b(1 − 0.63a/b)/L)', () => {
+  // Reservoir → J1; J1 → J2 via two equal-length channels, the second twice as wide and deep; J2 → pump aspirating 17.
+  // Doubling both sides multiplies a³b by 16 (the shape factor is unchanged).
   const s = schematic(
     [res('R', 0, 30), junction('J1', 100, 0), junction('J2', 200, 0), pump('P', 350, 0, 180)],
     [
