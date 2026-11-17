@@ -16,7 +16,7 @@ import {
 } from './edit';
 import { pipePoints, portPosition } from './geometry';
 import { validateSchematic } from './serialize';
-import type { Schematic } from './types';
+import { endComp, type Schematic } from './types';
 
 const ex: Schematic = twoInletFlowCell;
 const pipe = (s: Schematic, id: string) => s.pipes.find((p) => p.id === id)!;
@@ -73,17 +73,25 @@ describe('component edits', () => {
     expect(s.components.find((c) => c.id === 'v1')!.rotation).toBe(90);
   });
 
-  it('deleting a component removes its pipes and merges a 2-pipe junction', () => {
-    // Removing V2 leaves J1 with two pipes (from flow cell, to P2) → merged into one pipe.
+  it('deleting a part keeps its pipes, with open ends where its ports were', () => {
     const s = deleteComponent(ex, 'v2');
-    expect(s.components.some((c) => c.id === 'j1')).toBe(false);
-    expect(s.pipes.some((p) => p.from.comp === 'fc1' && p.to.comp === 'p2')).toBe(true);
+    expect(s.components.some((c) => c.id === 'v2')).toBe(false);
+    expect(pipe(s, 'pipe6').to).toEqual({ free: { x: 520, y: 270 } });
+    expect(pipe(s, 'pipe7').from).toEqual({ free: { x: 520, y: 310 } });
+    expect(s.components.some((c) => c.id === 'j1')).toBe(true); // still has three pipes
     expect(validateSchematic(s)).toEqual([]);
   });
 
-  it('reducing flow cell inlets drops pipes on removed ports', () => {
+  it('deleting a pipe merges a junction left with two pipes', () => {
+    const s = deletePipe(ex, 'pipe6');
+    expect(s.components.some((c) => c.id === 'j1')).toBe(false);
+    expect(s.pipes.some((p) => endComp(p.from) === 'fc1' && endComp(p.to) === 'p2')).toBe(true);
+    expect(validateSchematic(s)).toEqual([]);
+  });
+
+  it('reducing flow cell inlets leaves the pipe with an open end', () => {
     const s = updateComponent(ex, 'fc1', { inlets: 1 } as never);
-    expect(s.pipes.some((p) => p.to.port === 'in1')).toBe(false);
+    expect(pipe(s, 'pipe3').to).toEqual({ free: { x: 340, y: 210 } });
     expect(validateSchematic(s)).toEqual([]);
   });
 });
@@ -93,7 +101,7 @@ describe('pipe edits', () => {
     const { schematic: s, junctionId } = splitPipe(ex, 'pipe2', { x: 293, y: 192 });
     const j = s.components.find((c) => c.id === junctionId)!;
     expect(j.pos).toEqual({ x: 290, y: 190 });
-    const attached = s.pipes.filter((p) => p.from.comp === junctionId || p.to.comp === junctionId);
+    const attached = s.pipes.filter((p) => endComp(p.from) === junctionId || endComp(p.to) === junctionId);
     expect(attached).toHaveLength(2);
     expect(validateSchematic(s)).toEqual([]);
   });

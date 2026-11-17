@@ -1,4 +1,4 @@
-import type { Component, FlowCell, Pipe, Rotation, Schematic, Vec } from './types';
+import { isFree, type Component, type FlowCell, type Pipe, type Rotation, type Schematic, type Vec, type PipeEnd } from './types';
 
 /** A port in component-local coordinates (before rotation). `dir` points away from the body. */
 export interface LocalPort {
@@ -102,9 +102,14 @@ export function portPosition(s: Schematic, comp: string, port: string): Vec {
   return p.pos;
 }
 
-/** Full polyline of a pipe in world coordinates (port → waypoints → port). */
+/** Position of a pipe end: its port, or where an open end lies. */
+export function endPosition(s: Schematic, e: PipeEnd): Vec {
+  return isFree(e) ? e.free : portPosition(s, e.comp, e.port);
+}
+
+/** Full polyline of a pipe in world coordinates (end → waypoints → end). */
 export function pipePoints(s: Schematic, pipe: Pipe): Vec[] {
-  return [portPosition(s, pipe.from.comp, pipe.from.port), ...pipe.waypoints, portPosition(s, pipe.to.comp, pipe.to.port)];
+  return [endPosition(s, pipe.from), ...pipe.waypoints, endPosition(s, pipe.to)];
 }
 
 export function polylineLength(pts: Vec[]): number {

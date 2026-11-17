@@ -2,13 +2,18 @@
  * Pure editing operations on a Schematic. Every function returns a new schematic
  * (never mutates its input), which makes undo/redo a simple snapshot stack.
  */
-import { DEFAULT_CHANNEL, localPorts, portPosition, worldPorts } from './geometry';
-import type { Component, ComponentKind, Pipe, PortRef, Rotation, Schematic, Vec } from './types';
+import { DEFAULT_CHANNEL, endPosition, localPorts, portPosition, worldPorts } from './geometry';
+import { endComp, isFree, type Component, type ComponentKind, type Pipe, type PipeEnd, type PortRef, type Rotation, type Schematic, type Vec } from './types';
 
 export const GRID = 10;
 
 export const snap = (v: number, g = GRID) => Math.round(v / g) * g;
 export const snapVec = (p: Vec, g = GRID): Vec => ({ x: snap(p.x, g), y: snap(p.y, g) });
+
+const same = (a: Vec, b: Vec) => a.x === b.x && a.y === b.y;
+
+/** The port of component `id` this end is attached to, or null. */
+const portAt = (e: PipeEnd, id: string): string | null => (!isFree(e) && e.comp === id ? e.port : null);
 
 const KIND_LABEL: Record<ComponentKind, string> = {
   pump: 'Pump',
@@ -33,6 +38,9 @@ function nextName(s: Schematic, kind: ComponentKind): string {
 
 const PALETTE = ['#16a34a', '#2563eb', '#dc2626', '#9333ea', '#ea580c', '#0891b2'];
 
+/** Default flow cell chamber volume (µL). */
+export const DEFAULT_FLOWCELL_VOLUME_uL = 20;
+
 /** A new component of the given kind with sensible defaults. */
 export function makeComponent(s: Schematic, kind: ComponentKind, pos: Vec): Component {
   const base = { id: nextId(s.components.map((c) => c.id), kind), name: nextName(s, kind), pos: snapVec(pos), rotation: 0 as Rotation };
@@ -42,7 +50,7 @@ export function makeComponent(s: Schematic, kind: ComponentKind, pos: Vec): Comp
     case 'valve':
       return { ...base, kind, initialOpen: true };
     case 'flowcell':
-      return { ...base, kind, inlets: 2, outlets: 1 };
+      return { ...base, kind, inlets: 2, outlets: 1, volume_uL: DEFAULT_FLOWCELL_VOLUME_uL };
     case 'reservoir': {
       const n = s.components.filter((c) => c.kind === 'reservoir').length;
       return { ...base, kind, liquid: 'Liquid', color: PALETTE[n % PALETTE.length] };
@@ -59,23 +67,22 @@ export function addComponent(s: Schematic, c: Component): Schematic {
 }
 
 export function updateComponent(s: Schematic, id: string, patch: Partial<Component>): Schematic {
-  const next = { ...s, components: s.components.map((c) => (c.id === id ? ({ ...c, ...patch } as Component) : c)) };
-  // Changing inlet/outlet counts may remove ports that pipes are attached to.
-  return removeDanglingPipes(next);
+  const old = s.components.find((c) => c.id === id);
+  if (!old) return s;
+  const updated = { ...old, ...patch } as Component;
+  const next = { ...s, components: s.components.map((c) => (c.id === id ? updated : c)) };
+  // Changing inlet/outlet counts may remove ports: pipes on them become open ends where the port was.
+  const oldPorts = new Map(worldPorts(old).map((p) => [p.id, p.pos]));
+  const kept = new Set(localPorts(updated).map((p) => p.id));
+  const release = (e: PipeEnd): PipeEnd => {
+    const port = portAt(e, id);
+    return port !== null && !kept.has(port) ? { free: oldPorts.get(port)! } : e;
+  };
+  return { ...next, pipes: next.pipes.map((p) => ({ ...p, from: release(p.from), to: release(p.to) })) };
 }
 
 export function updatePipe(s: Schematic, id: string, patch: Partial<Pipe>): Schematic {
   return { ...s, pipes: s.pipes.map((p) => (p.id === id ? { ...p, ...patch } : p)) };
-}
-
-/** Drop pipes whose ports no longer exist (e.g. after reducing flow cell inlets). */
-export function removeDanglingPipes(s: Schematic): Schematic {
-  const ok = (r: PortRef) => {
-    const c = s.components.find((k) => k.id === r.comp);
-    return !!c && localPorts(c).some((p) => p.id === r.port);
-  };
-  const pipes = s.pipes.filter((p) => ok(p.from) && ok(p.to));
-  return pipes.length === s.pipes.length ? s : removeOrphanJunctions({ ...s, pipes });
 }
 
 /** Junctions with no pipes left are removed; a junction with exactly two pipes is merged back into one pipe. */
@@ -83,7 +90,7 @@ export function removeOrphanJunctions(s: Schematic): Schematic {
   let out = s;
   for (const j of s.components) {
     if (j.kind !== 'junction') continue;
-    const attached = out.pipes.filter((p) => p.from.comp === j.id || p.to.comp === j.id);
+    const attached = out.pipes.filter((p) => endComp(p.from) === j.id || endComp(p.to) === j.id);
     if (attached.length === 0) out = { ...out, components: out.components.filter((c) => c.id !== j.id) };
     else if (attached.length === 2) out = mergeAtJunction(out, j.id, attached[0], attached[1]);
   }
@@ -94,9 +101,9 @@ export function removeOrphanJunctions(s: Schematic): Schematic {
 function mergeAtJunction(s: Schematic, jid: string, a: Pipe, b: Pipe): Schematic {
   const jpos = s.components.find((c) => c.id === jid)!.pos;
   // Orient a so it ends at the junction and b so it starts there.
-  const aIn = a.to.comp === jid ? a : reversePipe(a);
-  const bOut = b.from.comp === jid ? b : reversePipe(b);
-  if (aIn.from.comp === jid || bOut.to.comp === jid) return s; // loop on itself — leave it alone
+  const aIn = endComp(a.to) === jid ? a : reversePipe(a);
+  const bOut = endComp(b.from) === jid ? b : reversePipe(b);
+  if (endComp(aIn.from) === jid || endComp(bOut.to) === jid) return s; // loop on itself — leave it alone
   const merged: Pipe = {
     id: a.id,
     from: aIn.from,
@@ -114,11 +121,19 @@ export function reversePipe(p: Pipe): Pipe {
   return { ...p, from: p.to, to: p.from, waypoints: [...p.waypoints].reverse() };
 }
 
+/** Delete a part. Its pipes stay, with open ends where the part's ports were. */
 export function deleteComponent(s: Schematic, id: string): Schematic {
+  const c = s.components.find((k) => k.id === id);
+  if (!c) return s;
+  const ports = new Map(worldPorts(c).map((p) => [p.id, p.pos]));
+  const release = (e: PipeEnd): PipeEnd => {
+    const port = portAt(e, id);
+    return port !== null ? { free: { ...ports.get(port)! } } : e;
+  };
   const next = {
     ...s,
-    components: s.components.filter((c) => c.id !== id),
-    pipes: s.pipes.filter((p) => p.from.comp !== id && p.to.comp !== id),
+    components: s.components.filter((k) => k.id !== id),
+    pipes: s.pipes.map((p) => ({ ...p, from: release(p.from), to: release(p.to) })),
   };
   return removeOrphanJunctions(next);
 }
@@ -131,17 +146,19 @@ export function deletePipe(s: Schematic, id: string): Schematic {
  * Move a component. Pipe ends follow it; the waypoint next to a moved end is
  * shifted along so the first/last segment stays horizontal or vertical.
  */
-export function moveComponent(s: Schematic, id: string, pos: Vec): Schematic {
+export function moveComponent(s: Schematic, id: string, pos: Vec, rotation?: Rotation): Schematic {
   const old = s.components.find((c) => c.id === id);
   if (!old) return s;
   const oldPorts = new Map(worldPorts(old).map((p) => [p.id, p.pos]));
-  const moved = { ...old, pos: snapVec(pos) } as Component;
+  const moved = { ...old, pos: snapVec(pos), rotation: rotation ?? old.rotation } as Component;
   const newPorts = new Map(worldPorts(moved).map((p) => [p.id, p.pos]));
   const components = s.components.map((c) => (c.id === id ? moved : c));
   const pipes = s.pipes.map((p) => {
     let wps = p.waypoints;
-    if (p.from.comp === id) wps = followEnd(wps, oldPorts.get(p.from.port)!, newPorts.get(p.from.port)!, 'start');
-    if (p.to.comp === id) wps = followEnd(wps, oldPorts.get(p.to.port)!, newPorts.get(p.to.port)!, 'end');
+    const f = portAt(p.from, id);
+    const t = portAt(p.to, id);
+    if (f !== null) wps = followEnd(wps, oldPorts.get(f)!, newPorts.get(f)!, 'start');
+    if (t !== null) wps = followEnd(wps, oldPorts.get(t)!, newPorts.get(t)!, 'end');
     return wps === p.waypoints ? p : { ...p, waypoints: wps };
   });
   return { ...s, components, pipes };
@@ -170,18 +187,7 @@ function followEnd(wps: Vec[], oldEnd: Vec, newEnd: Vec, which: 'start' | 'end')
 export function rotateComponent(s: Schematic, id: string): Schematic {
   const c = s.components.find((k) => k.id === id);
   if (!c || c.kind === 'junction') return s;
-  const rotation = (((c.rotation + 90) % 360) as Rotation);
-  // Re-attaching pipes after rotation: treat as a move of each port, then fix up.
-  const rotated = { ...c, rotation } as Component;
-  const before = new Map(worldPorts(c).map((p) => [p.id, p.pos]));
-  const after = new Map(worldPorts(rotated).map((p) => [p.id, p.pos]));
-  const pipes = s.pipes.map((p) => {
-    let wps = p.waypoints;
-    if (p.from.comp === id) wps = followEnd(wps, before.get(p.from.port)!, after.get(p.from.port)!, 'start');
-    if (p.to.comp === id) wps = followEnd(wps, before.get(p.to.port)!, after.get(p.to.port)!, 'end');
-    return wps === p.waypoints ? p : { ...p, waypoints: wps };
-  });
-  return { ...s, components: s.components.map((k) => (k.id === id ? rotated : k)), pipes };
+  return moveComponent(s, id, c.pos, ((c.rotation + 90) % 360) as Rotation);
 }
 
 /** True if this port can accept another pipe (junctions accept any number). */
@@ -189,7 +195,7 @@ export function portIsFree(s: Schematic, ref: PortRef): boolean {
   const c = s.components.find((k) => k.id === ref.comp);
   if (!c) return false;
   if (c.kind === 'junction') return true;
-  return !s.pipes.some((p) => (p.from.comp === ref.comp && p.from.port === ref.port) || (p.to.comp === ref.comp && p.to.port === ref.port));
+  return !s.pipes.some((p) => portAt(p.from, ref.comp) === ref.port || portAt(p.to, ref.comp) === ref.port);
 }
 
 /** Remove zero-length segments and collinear interior waypoints. */
@@ -213,8 +219,8 @@ export function simplifyPolyline(pts: Vec[]): Vec[] {
 export function simplifyPipe(s: Schematic, id: string): Schematic {
   const p = s.pipes.find((k) => k.id === id);
   if (!p) return s;
-  const a = portPosition(s, p.from.comp, p.from.port);
-  const b = portPosition(s, p.to.comp, p.to.port);
+  const a = endPosition(s, p.from);
+  const b = endPosition(s, p.to);
   const pts = simplifyPolyline([a, ...p.waypoints, b]);
   // Keep the endpoints even if a waypoint coincides with them.
   const inner = pts.slice(pts[0].x === a.x && pts[0].y === a.y ? 1 : 0);
@@ -225,14 +231,74 @@ export function simplifyPipe(s: Schematic, id: string): Schematic {
 
 export function addPipe(
   s: Schematic,
-  from: PortRef,
-  to: PortRef,
+  from: PipeEnd,
+  to: PipeEnd,
   waypoints: Vec[],
   { width_mm, depth_mm } = DEFAULT_CHANNEL,
 ): { schematic: Schematic; id: string } {
   const id = nextId(s.pipes.map((p) => p.id), 'pipe');
   const next = { ...s, pipes: [...s.pipes, { id, from, to, waypoints, width_mm, depth_mm }] };
   return { schematic: simplifyPipe(next, id), id };
+}
+
+/**
+ * After an end moved from `old` to `end`: if the last segment became diagonal, add a corner so the
+ * pipe stays horizontal/vertical, continuing in the direction the pipe already had.
+ */
+function squareEnd(wps: Vec[], other: Vec, old: Vec, end: Vec, which: 'from' | 'to'): Vec[] {
+  const pts = which === 'from' ? [end, ...wps, other] : [other, ...wps, end];
+  const n = pts.length;
+  const prev = which === 'from' ? pts[1] : pts[n - 2];
+  if (prev.x === end.x || prev.y === end.y) return wps;
+  const prev2 = which === 'from' ? pts[2] : pts[n - 3];
+  // Turn at a right angle to the segment before `prev`; for a straight pipe keep its old direction.
+  const goHorizontal = prev2 ? prev2.x === prev.x : old.y === prev.y;
+  const corner = goHorizontal ? { x: end.x, y: prev.y } : { x: prev.x, y: end.y };
+  return which === 'from' ? [corner, ...wps] : [...wps, corner];
+}
+
+/** Move an open pipe end; the pipe stays horizontal/vertical. */
+export function moveFreeEnd(s: Schematic, pipeId: string, which: 'from' | 'to', pos: Vec): Schematic {
+  const p = s.pipes.find((k) => k.id === pipeId);
+  if (!p || !isFree(p[which])) return s;
+  const old = (p[which] as { free: Vec }).free;
+  const np = snapVec(pos);
+  const other = endPosition(s, which === 'from' ? p.to : p.from);
+  let wps = followEnd(p.waypoints, old, np, which === 'from' ? 'start' : 'end');
+  wps = squareEnd(wps, other, old, np, which);
+  return simplifyPipe(updatePipe(s, pipeId, { [which]: { free: np }, waypoints: wps }), pipeId);
+}
+
+/** Attach a pipe end to a port. */
+export function connectEnd(s: Schematic, pipeId: string, which: 'from' | 'to', ref: PortRef): Schematic {
+  const p = s.pipes.find((k) => k.id === pipeId);
+  if (!p) return s;
+  const old = endPosition(s, p[which]);
+  const target = portPosition(s, ref.comp, ref.port);
+  const other = endPosition(s, which === 'from' ? p.to : p.from);
+  let wps = followEnd(p.waypoints, old, target, which === 'from' ? 'start' : 'end');
+  wps = squareEnd(wps, other, old, target, which);
+  return simplifyPipe(updatePipe(s, pipeId, { [which]: ref, waypoints: wps }), pipeId);
+}
+
+/** Connect every open pipe end lying on (within `tol` mm of) a free port of this component. */
+export function autoConnect(s: Schematic, compId: string, tol = 1): Schematic {
+  const c = s.components.find((k) => k.id === compId);
+  if (!c) return s;
+  let out = s;
+  for (const port of worldPorts(c)) {
+    for (const p of out.pipes) {
+      if (!portIsFree(out, { comp: compId, port: port.id })) break;
+      for (const which of ['from', 'to'] as const) {
+        const e = p[which];
+        if (isFree(e) && Math.hypot(e.free.x - port.pos.x, e.free.y - port.pos.y) <= tol) {
+          out = connectEnd(out, p.id, which, { comp: compId, port: port.id });
+          break;
+        }
+      }
+    }
+  }
+  return out;
 }
 
 /** Closest point on segment ab to p, and parameter t ∈ [0,1]. */
@@ -262,7 +328,7 @@ export function nearestSegment(pts: Vec[], p: Vec): { index: number; point: Vec;
 export function splitPipe(s: Schematic, pipeId: string, at: Vec): { schematic: Schematic; junctionId: string } {
   const p = s.pipes.find((k) => k.id === pipeId);
   if (!p) throw new Error(`Unknown pipe ${pipeId}`);
-  const pts = [portPosition(s, p.from.comp, p.from.port), ...p.waypoints, portPosition(s, p.to.comp, p.to.port)];
+  const pts = [endPosition(s, p.from), ...p.waypoints, endPosition(s, p.to)];
   const seg = nearestSegment(pts, at);
   const a = pts[seg.index];
   const b = pts[seg.index + 1];
@@ -287,16 +353,91 @@ export function splitPipe(s: Schematic, pipeId: string, at: Vec): { schematic: S
   return { schematic: next, junctionId: junction.id };
 }
 
+/** Half the distance between a valve's two ports (mm). */
+const VALVE_HALF_SPAN = 20;
+
+export interface InlineSpot {
+  pipeId: string;
+  /** Valve centre, on the pipe. */
+  pos: Vec;
+  rotation: Rotation;
+}
+
+/**
+ * Where a valve dropped near `at` would sit inline on a pipe: on a straight horizontal or vertical
+ * segment within `reach` mm, with room for both ports (at least one grid step of pipe left each side).
+ */
+export function findInlineSpot(s: Schematic, at: Vec, reach = 8): InlineSpot | null {
+  let best: (InlineSpot & { dist: number }) | null = null;
+  for (const p of s.pipes) {
+    let pts: Vec[];
+    try {
+      pts = [endPosition(s, p.from), ...p.waypoints, endPosition(s, p.to)];
+    } catch {
+      continue;
+    }
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i];
+      const b = pts[i + 1];
+      const horizontal = a.y === b.y;
+      if (!horizontal && a.x !== b.x) continue;
+      const r = projectOnSegment(at, a, b);
+      if (r.dist > reach || (best && r.dist >= best.dist)) continue;
+      const pos = horizontal ? { x: snap(r.point.x), y: a.y } : { x: a.x, y: snap(r.point.y) };
+      const lo = horizontal ? Math.min(a.x, b.x) : Math.min(a.y, b.y);
+      const hi = horizontal ? Math.max(a.x, b.x) : Math.max(a.y, b.y);
+      const c = horizontal ? pos.x : pos.y;
+      if (c - VALVE_HALF_SPAN < lo + GRID || c + VALVE_HALF_SPAN > hi - GRID) continue;
+      best = { pipeId: p.id, pos, rotation: horizontal ? 0 : 90, dist: r.dist };
+    }
+  }
+  return best && { pipeId: best.pipeId, pos: best.pos, rotation: best.rotation };
+}
+
+/**
+ * Cut a pipe where a two-port part (a valve) sits on it and connect the two halves to its ports.
+ * The part must already be centred on a straight segment of the pipe and aligned with it.
+ */
+export function insertInline(s: Schematic, compId: string, pipeId: string): Schematic {
+  const c = s.components.find((k) => k.id === compId);
+  const p = s.pipes.find((k) => k.id === pipeId);
+  if (!c || !p) return s;
+  const pts = [endPosition(s, p.from), ...p.waypoints, endPosition(s, p.to)];
+  const ports = worldPorts(c);
+  if (ports.length !== 2) return s;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    const onSeg = projectOnSegment(c.pos, a, b);
+    if (onSeg.dist > 1e-6 || onSeg.t <= 0 || onSeg.t >= 1) continue;
+    // The port nearer the segment start connects to the first half.
+    const along = (v: Vec) => projectOnSegment(v, a, b).t;
+    const [near, far] = along(ports[0].pos) <= along(ports[1].pos) ? ports : [ports[1], ports[0]];
+    if (projectOnSegment(near.pos, a, b).dist > 1e-6 || projectOnSegment(far.pos, a, b).dist > 1e-6) return s; // not aligned
+    const secondId = nextId(s.pipes.map((k) => k.id), 'pipe');
+    const first: Pipe = { ...p, to: { comp: compId, port: near.id }, waypoints: p.waypoints.slice(0, i) };
+    const second: Pipe = { ...p, id: secondId, from: { comp: compId, port: far.id }, waypoints: p.waypoints.slice(i) };
+    const next = { ...s, pipes: s.pipes.flatMap((k) => (k.id === pipeId ? [first, second] : [k])) };
+    return simplifyPipe(simplifyPipe(next, first.id), second.id);
+  }
+  return s;
+}
+
+/** Is a component connected to any pipe? */
+export function isConnected(s: Schematic, compId: string): boolean {
+  return s.pipes.some((p) => endComp(p.from) === compId || endComp(p.to) === compId);
+}
+
 /**
  * Drag segment `index` (between points index and index+1 of the full polyline) by `delta`.
- * Horizontal segments move only vertically and vice versa. A segment touching a port gets a
- * new stub waypoint so the port end stays put.
+ * Horizontal segments move only vertically and vice versa. A segment touching an end gets a
+ * new stub waypoint so the end stays put.
  */
 export function dragSegment(s: Schematic, pipeId: string, index: number, delta: Vec): Schematic {
   const p = s.pipes.find((k) => k.id === pipeId);
   if (!p) return s;
-  const start = portPosition(s, p.from.comp, p.from.port);
-  const end = portPosition(s, p.to.comp, p.to.port);
+  const start = endPosition(s, p.from);
+  const end = endPosition(s, p.to);
   const pts = [start, ...p.waypoints, end];
   const a = pts[index];
   const b = pts[index + 1];
@@ -316,3 +457,5 @@ export function dragSegment(s: Schematic, pipeId: string, index: number, delta: 
   wps[i] = { x: wps[i].x + d.x, y: wps[i].y + d.y };
   return updatePipe(s, pipeId, { waypoints: wps });
 }
+
+export { same as samePoint };

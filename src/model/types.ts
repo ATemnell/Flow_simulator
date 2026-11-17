@@ -39,6 +39,8 @@ export interface FlowCell extends BaseComponent {
   kind: 'flowcell';
   inlets: number;
   outlets: number;
+  /** Internal chamber volume. */
+  volume_uL: number;
 }
 
 /** Open liquid source. Name/color can be changed by the script. */
@@ -65,11 +67,23 @@ export interface PortRef {
   port: string;
 }
 
+/** A pipe end that is not connected to anything yet (drawn with an ×). */
+export interface FreeEnd {
+  free: Vec;
+}
+
+export type PipeEnd = PortRef | FreeEnd;
+
+export const isFree = (e: PipeEnd): e is FreeEnd => 'free' in e;
+
+/** The component a pipe end is attached to, or null for an open end. */
+export const endComp = (e: PipeEnd): string | null => (isFree(e) ? null : e.comp);
+
 /** A pipe: polyline from one port to another through optional waypoints. */
 export interface Pipe {
   id: string;
-  from: PortRef;
-  to: PortRef;
+  from: PipeEnd;
+  to: PipeEnd;
   waypoints: Vec[];
   /** Rectangular channel cross-section. */
   width_mm: number;

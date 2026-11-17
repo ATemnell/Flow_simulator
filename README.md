@@ -12,8 +12,11 @@ npm test
 
 - **Edit mode**:
   - Place parts from the palette.
-  - Draw pipes port to port with the Pipe tool (P). Click an existing pipe to make a T-junction.
-  - Set properties in the right-hand panel.
+  - **Draw pipes** with the Pipe tool (P): start on a port or anywhere on the canvas. Finish on a port, or double-click (or press Enter) to leave the end open (red ×).
+  - **T-junctions:** click an existing pipe to start or end a T-junction there.
+  - **Lay out pipes first:** a part placed so a port lands on an × connects to it, and you can drag an × onto a port. Deleting a part keeps its pipes, with × ends. When running, open ends act as sealed ends.
+  - **Valves:** drop one on a straight pipe section and it is cut into the pipe.
+  - **Properties:** set them in the right-hand panel: pipe width and depth, flow cell volume, and so on.
   - Write the script in the drawer under the canvas.
 - **Run mode**:
   - Plays the script. The step list follows playback, the slider seeks, and clicking a step jumps to it.
@@ -54,4 +57,4 @@ Wait 2
 
 - **Flow:** `src/sim/solver.ts`. Pumps impose flow rates, while reservoirs and waste are open ends. Pipes are rectangular channels (width × depth, default 0.3 × 0.35 mm). Flow splits between parallel paths by the laminar conductance of a rectangular channel, a³·b·(1 − 0.63·a/b)/(12·L), with a ≤ b the two sides. A setup that can't move, such as a pump pushing against a closed valve, is reported instead of solved.
 - **Transport:** `src/sim/transport.ts`. Each pipe holds ordered plugs of liquid, so a new liquid's front pushes the old one ahead of it. Where streams merge at a junction, they blend.
-- **Flow cell:** `src/sim/flowcell.ts`. Inlet streams flow side by side across the chamber (20 µL) as bands, each as wide as its share of the flow. Each outlet takes its own slice of the bands.
+- **Flow cell:** `src/sim/flowcell.ts`. Inlet streams flow side by side across the chamber (its volume is a flow cell setting, default 20 µL) as bands, each as wide as its share of the flow. Each outlet takes its own slice of the bands.

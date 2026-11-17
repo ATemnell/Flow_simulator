@@ -1,8 +1,29 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type WheelEvent } from 'react';
 import { findHops } from '../model/crossings';
-import { addComponent, addPipe, dragSegment, makeComponent, moveComponent, nearestSegment, portIsFree, simplifyPipe, snap, snapVec, splitPipe, GRID } from '../model/edit';
-import { DEFAULT_CHANNEL, pipePoints, pipeVisualWidth, portPosition, worldBBox, worldPorts } from '../model/geometry';
-import type { PortRef, Schematic, Vec } from '../model/types';
+import {
+  addComponent,
+  addPipe,
+  autoConnect,
+  connectEnd,
+  dragSegment,
+  findInlineSpot,
+  insertInline,
+  isConnected,
+  makeComponent,
+  moveComponent,
+  moveFreeEnd,
+  nearestSegment,
+  portIsFree,
+  simplifyPipe,
+  snap,
+  snapVec,
+  splitPipe,
+  GRID,
+  type InlineSpot,
+} from '../model/edit';
+import { DEFAULT_CHANNEL, endPosition, pipePoints, pipeVisualWidth, worldBBox, worldPorts } from '../model/geometry';
+import { endComp, isFree, type PipeEnd, type PortRef, type Schematic, type Vec } from '../model/types';
+import { finishDraftOpen } from './draft';
 import { ComponentView } from '../render/ComponentView';
 import { PipeView, pointsToPath } from '../render/PipeView';
 import { theme } from '../render/theme';
@@ -21,7 +42,27 @@ type Target = { kind: 'port'; ref: PortRef; pos: Vec; dir: Vec } | { kind: 'pipe
 type Gesture =
   | { mode: 'pan'; start: Vec; origin: Vec }
   | { mode: 'moveComp'; id: string; offset: Vec }
-  | { mode: 'dragSeg'; pipeId: string; index: number; start: Vec };
+  | { mode: 'dragSeg'; pipeId: string; index: number; start: Vec }
+  | { mode: 'moveEnd'; pipeId: string; which: 'from' | 'to' };
+
+/** How close (mm) a dragged open end must be to a port to connect on release. */
+const CONNECT_REACH = 8;
+
+/** The nearest port an open end could connect to, within reach. */
+function nearestFreePort(s: Schematic, at: Vec, pipeId: string, which: 'from' | 'to'): { ref: PortRef; pos: Vec; dir: Vec } | null {
+  const p = s.pipes.find((k) => k.id === pipeId);
+  const other = p ? endComp(which === 'from' ? p.to : p.from) : null;
+  let best: { ref: PortRef; pos: Vec; dir: Vec; d: number } | null = null;
+  for (const c of s.components) {
+    if (c.id === other) continue; // would loop the pipe onto the same part
+    for (const port of worldPorts(c)) {
+      const ref = { comp: c.id, port: port.id };
+      const d = Math.hypot(port.pos.x - at.x, port.pos.y - at.y);
+      if (d <= CONNECT_REACH && (!best || d < best.d) && portIsFree(s, ref)) best = { ref, pos: port.pos, dir: port.dir, d };
+    }
+  }
+  return best;
+}
 
 /** Corner point for an L-shaped route a→b. 'h' = leave a horizontally. Null if already aligned. */
 function orthoCorner(a: Vec, b: Vec, first: 'h' | 'v' | 'auto'): Vec | null {
@@ -31,8 +72,8 @@ function orthoCorner(a: Vec, b: Vec, first: 'h' | 'v' | 'auto'): Vec | null {
 }
 
 /** Which way the first segment should leave the draft's last point. */
-function leaveMode(s: Schematic, start: PortRef, waypoints: Vec[]): 'h' | 'v' | 'auto' {
-  if (waypoints.length) return 'auto';
+function leaveMode(s: Schematic, start: PipeEnd, waypoints: Vec[]): 'h' | 'v' | 'auto' {
+  if (waypoints.length || isFree(start)) return 'auto';
   const c = s.components.find((k) => k.id === start.comp);
   const dir = c && worldPorts(c).find((p) => p.id === start.port)?.dir;
   return dir && dir.x !== 0 ? 'h' : dir && dir.y !== 0 ? 'v' : 'auto';
@@ -61,6 +102,10 @@ export function EditorCanvas() {
   const [cursor, setCursor] = useState<Vec | null>(null);
   const [hover, setHover] = useState<Target>(null);
   const gesture = useRef<Gesture | null>(null);
+  /** While dragging an open end: show ports, and which one it would connect to. */
+  const [endDrag, setEndDrag] = useState<{ target: PortRef | null } | null>(null);
+  /** While moving an unconnected valve: the pipe spot it would be inserted at. */
+  const spotRef = useRef<InlineSpot | null>(null);
 
   const pipes = useMemo(
     () =>
@@ -148,13 +193,13 @@ export function EditorCanvas() {
   const canEnd = (t: Target, s: Schematic): boolean => {
     if (!t || !draft) return false;
     if (t.kind === 'pipe') return true;
-    if (t.ref.comp === draft.start.comp && t.ref.port === draft.start.port) return false;
+    if (!isFree(draft.start) && t.ref.comp === draft.start.comp && t.ref.port === draft.start.port) return false;
     return portIsFree(s, t.ref);
   };
 
   const lastDraftPoint = (s: Schematic): Vec | null => {
     if (!draft) return null;
-    return draft.waypoints.length ? draft.waypoints[draft.waypoints.length - 1] : portPosition(s, draft.start.comp, draft.start.port);
+    return draft.waypoints.length ? draft.waypoints[draft.waypoints.length - 1] : endPosition(s, draft.start);
   };
 
   // ---------- pointer handling ----------
@@ -188,8 +233,15 @@ export function EditorCanvas() {
     }
 
     if (st.tool.type === 'place') {
-      const c = makeComponent(s, st.tool.kind, world);
-      st.commit(addComponent(s, c));
+      let c = makeComponent(s, st.tool.kind, world);
+      let next: Schematic;
+      // A valve dropped on a pipe is cut into it.
+      const spot = c.kind === 'valve' ? findInlineSpot(s, world) : null;
+      if (spot) {
+        c = { ...c, pos: spot.pos, rotation: spot.rotation };
+        next = insertInline(addComponent(s, c), c.id, spot.pipeId);
+      } else next = addComponent(s, c);
+      st.commit(autoConnect(next, c.id)); // ports landing on open pipe ends connect
       st.select({ type: 'comp', id: c.id });
       if (!e.shiftKey) st.setTool({ type: 'select' }); // Shift: keep placing
       return;
@@ -198,10 +250,15 @@ export function EditorCanvas() {
     if (st.tool.type === 'pipe') {
       const t = resolveTarget(el, world, s);
       if (!st.draft) {
-        if (!t) return startPan();
-        if (t.kind === 'port' && !portIsFree(s, t.ref)) return;
+        if (t && t.kind === 'port' && !portIsFree(s, t.ref)) return;
         st.beginGesture();
-        let start: PortRef;
+        let start: PipeEnd;
+        if (!t) {
+          // Start on empty canvas: an open end.
+          st.setDraft({ start: { free: snapVec(world) }, waypoints: [] });
+          st.select(null);
+          return;
+        }
         if (t.kind === 'pipe') {
           // Start a branch off an existing pipe: split it with a junction.
           const r = splitPipe(s, t.id, t.pos);
@@ -247,6 +304,16 @@ export function EditorCanvas() {
     const hit = el.closest('[data-hit]');
     const kind = hit?.getAttribute('data-hit');
     const id = hit?.getAttribute('data-id');
+    if (kind === 'end') {
+      const pipeId = hit!.getAttribute('data-pipe')!;
+      const which = hit!.getAttribute('data-which') as 'from' | 'to';
+      st.select({ type: 'pipe', id: pipeId });
+      st.beginGesture();
+      svgRef.current!.setPointerCapture(e.pointerId);
+      gesture.current = { mode: 'moveEnd', pipeId, which };
+      setEndDrag({ target: null });
+      return;
+    }
     if (kind === 'comp' && id) {
       const c = s.components.find((k) => k.id === id)!;
       st.select({ type: 'comp', id });
@@ -279,7 +346,17 @@ export function EditorCanvas() {
     if (g.mode === 'pan') {
       setView((v) => ({ ...v, x: g.origin.x - (e.clientX - g.start.x) / v.scale, y: g.origin.y - (e.clientY - g.start.y) / v.scale }));
     } else if (g.mode === 'moveComp' && st.gestureBase) {
-      st.setLive(moveComponent(st.gestureBase, g.id, { x: world.x - g.offset.x, y: world.y - g.offset.y }));
+      const base = st.gestureBase;
+      const to = { x: world.x - g.offset.x, y: world.y - g.offset.y };
+      const c = base.components.find((k) => k.id === g.id);
+      // An unconnected valve snaps onto a pipe it is dragged over.
+      const spot = c?.kind === 'valve' && !isConnected(base, g.id) ? findInlineSpot(base, to) : null;
+      spotRef.current = spot;
+      st.setLive(spot ? moveComponent(base, g.id, spot.pos, spot.rotation) : moveComponent(base, g.id, to));
+    } else if (g.mode === 'moveEnd' && st.gestureBase) {
+      const target = nearestFreePort(st.gestureBase, world, g.pipeId, g.which);
+      setEndDrag({ target: target?.ref ?? null });
+      st.setLive(moveFreeEnd(st.gestureBase, g.pipeId, g.which, target ? target.pos : world));
     } else if (g.mode === 'dragSeg' && st.gestureBase) {
       st.setLive(dragSegment(st.gestureBase, g.pipeId, g.index, { x: world.x - g.start.x, y: world.y - g.start.y }));
     }
@@ -291,6 +368,19 @@ export function EditorCanvas() {
     if (!g || g.mode === 'pan') return;
     const st = useApp.getState();
     if (g.mode === 'dragSeg') st.setLive(simplifyPipe(st.schematic, g.pipeId));
+    if (g.mode === 'moveComp') {
+      const spot = spotRef.current;
+      spotRef.current = null;
+      let s = st.schematic;
+      if (spot) s = insertInline(s, g.id, spot.pipeId);
+      st.setLive(autoConnect(s, g.id));
+    }
+    if (g.mode === 'moveEnd') {
+      setEndDrag(null);
+      const p = st.schematic.pipes.find((k) => k.id === g.pipeId);
+      const target = p && nearestFreePort(st.schematic, endPosition(st.schematic, p[g.which]), g.pipeId, g.which);
+      st.setLive(target ? connectEnd(st.schematic, g.pipeId, g.which, target.ref) : simplifyPipe(st.schematic, g.pipeId));
+    }
     st.endGesture();
   };
 
@@ -311,7 +401,7 @@ export function EditorCanvas() {
   let draftPreview: Vec[] | null = null;
   if (draft) {
     try {
-      const start = portPosition(schematic, draft.start.comp, draft.start.port);
+      const start = endPosition(schematic, draft.start);
       const pts = [start, ...draft.waypoints];
       const last = pts[pts.length - 1];
       const end = hover && canEnd(hover, schematic) ? hover : null;
@@ -324,7 +414,11 @@ export function EditorCanvas() {
     }
   }
 
-  const ghost = tool.type === 'place' && cursor ? makeComponent(schematic, tool.kind, cursor) : null;
+  let ghost = tool.type === 'place' && cursor ? makeComponent(schematic, tool.kind, cursor) : null;
+  if (ghost?.kind === 'valve' && cursor) {
+    const spot = findInlineSpot(schematic, cursor);
+    if (spot) ghost = { ...ghost, pos: spot.pos, rotation: spot.rotation };
+  }
   const selComp = selection?.type === 'comp' ? schematic.components.find((c) => c.id === selection.id) : undefined;
   const selBox = selComp ? worldBBox(selComp) : null;
 
@@ -340,6 +434,9 @@ export function EditorCanvas() {
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       onPointerLeave={() => setCursor(null)}
+      onDoubleClick={() => {
+        if (useApp.getState().draft) finishDraftOpen();
+      }}
       onContextMenu={(e) => e.preventDefault()}
     >
       <defs>
@@ -357,6 +454,8 @@ export function EditorCanvas() {
             width_mm={p.width_mm}
             hops={hops.get(p.id)}
             selected={selection?.type === 'pipe' && selection.id === p.id}
+            openEnds={{ from: isFree(p.from), to: isFree(p.to) }}
+            endsDraggable={mode === 'edit' && tool.type === 'select'}
             live={
               sim
                 ? {
@@ -401,7 +500,12 @@ export function EditorCanvas() {
             pointerEvents="none"
           />
         )}
-        {tool.type === 'pipe' && <PortMarkers schematic={schematic} hover={hover} />}
+        {(tool.type === 'pipe' || endDrag) && (
+          <PortMarkers
+            schematic={schematic}
+            hover={endDrag ? (endDrag.target ? { kind: 'port', ref: endDrag.target, pos: { x: 0, y: 0 }, dir: { x: 0, y: 0 } } : null) : hover}
+          />
+        )}
         {draftPreview && (
           <path
             d={pointsToPath(draftPreview)}

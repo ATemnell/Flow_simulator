@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { channelArea } from '../model/geometry';
-import type { Pump, Reservoir, Valve } from '../model/types';
+import { isFree, type PipeEnd, type Pump, type Reservoir, type Valve } from '../model/types';
 import { fmtTime } from '../script/ScriptDrawer';
 import { useApp } from '../ui/store';
 import { scriptRunnable, useRun } from './runStore';
@@ -31,7 +31,8 @@ export function RunPanel() {
   const valves = s.components.filter((c): c is Valve => c.kind === 'valve');
   const reservoirs = s.components.filter((c): c is Reservoir => c.kind === 'reservoir');
   const selPipe = selection?.type === 'pipe' ? s.pipes.find((p) => p.id === selection.id) : undefined;
-  const nameOf = (id: string) => s.components.find((c) => c.id === id)?.name ?? id;
+  const nameOf = (e: PipeEnd) => (isFree(e) ? 'open end' : (s.components.find((c) => c.id === e.comp)?.name ?? e.comp));
+  const openEnds = s.pipes.reduce((n, p) => n + (isFree(p.from) ? 1 : 0) + (isFree(p.to) ? 1 : 0), 0);
   const canScript = scriptRunnable(script);
   const manual = control === 'manual';
 
@@ -87,6 +88,11 @@ export function RunPanel() {
         </span>
       </label>
 
+      {openEnds > 0 && (
+        <p className="note">
+          {openEnds === 1 ? '1 pipe end is' : `${openEnds} pipe ends are`} not connected (×). They act as sealed ends.
+        </p>
+      )}
       {sim.solution.issues.length > 0 && (
         <div className="issues" role="alert">
           {sim.solution.issues.map((i, k) => (
@@ -161,10 +167,10 @@ export function RunPanel() {
         <>
           <h3>Selected pipe</h3>
           <p className="note">
-            {nameOf(selPipe.from.comp)} → {nameOf(selPipe.to.comp)}
+            {nameOf(selPipe.from)} → {nameOf(selPipe.to)}
             <br />
             Flow {fmt(Math.abs(sim.solution.pipeFlow.get(selPipe.id) ?? 0), 2)} µL/min
-            {(sim.solution.pipeFlow.get(selPipe.id) ?? 0) < 0 ? ' (towards ' + nameOf(selPipe.from.comp) + ')' : (sim.solution.pipeFlow.get(selPipe.id) ?? 0) > 0 ? ' (towards ' + nameOf(selPipe.to.comp) + ')' : ''}
+            {(sim.solution.pipeFlow.get(selPipe.id) ?? 0) < 0 ? ' (towards ' + nameOf(selPipe.from) + ')' : (sim.solution.pipeFlow.get(selPipe.id) ?? 0) > 0 ? ' (towards ' + nameOf(selPipe.to) + ')' : ''}
             <br />
             Speed {fmt(Math.abs(sim.solution.pipeFlow.get(selPipe.id) ?? 0) / 60 / channelArea(selPipe), 2)} mm/s
           </p>

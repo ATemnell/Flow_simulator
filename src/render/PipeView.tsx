@@ -26,6 +26,10 @@ interface Props {
   hops?: Hop[];
   selected?: boolean;
   live?: PipeLive;
+  /** Which ends are not connected (drawn with an ×). */
+  openEnds?: { from: boolean; to: boolean };
+  /** Open ends can be dragged (edit mode, select tool). */
+  endsDraggable?: boolean;
 }
 
 /**
@@ -34,7 +38,7 @@ interface Props {
  * it bridges over it with a semicircular hop. During a run the channel is filled with the
  * liquid plugs, and chevrons show the flow direction.
  */
-export function PipeView({ id, points, width_mm, hops, selected, live }: Props) {
+export function PipeView({ id, points, width_mm, hops, selected, live, openEnds, endsDraggable }: Props) {
   const w = pipeVisualWidth(width_mm);
   const d = hoppedPath(points, hops);
   return (
@@ -47,8 +51,31 @@ export function PipeView({ id, points, width_mm, hops, selected, live }: Props) 
       {live && live.dir !== 0 && <Chevrons points={points} w={w} dir={live.dir} phase={live.phase} spacing={live.spacing} />}
       {/* Wide invisible stroke: makes thin pipes easy to click. */}
       <path d={pointsToPath(points)} fill="none" stroke="transparent" strokeWidth={w + 12} data-hit="pipe" data-id={id} />
+      {openEnds?.from && <OpenEnd id={id} which="from" at={points[0]} toward={points[1]} w={w} draggable={endsDraggable} />}
+      {openEnds?.to && <OpenEnd id={id} which="to" at={points[points.length - 1]} toward={points[points.length - 2]} w={w} draggable={endsDraggable} />}
       {selected &&
         points.slice(1, -1).map((p, i) => <rect key={i} x={p.x - 3} y={p.y - 3} width={6} height={6} fill={theme.channel} stroke={theme.accent} strokeWidth={1.5} pointerEvents="none" />)}
+    </g>
+  );
+}
+
+/** An unconnected pipe end: a red × across the end of the channel. Drag it onto a port to connect. */
+function OpenEnd({ id, which, at, toward, w, draggable }: { id: string; which: 'from' | 'to'; at: Vec; toward?: Vec; w: number; draggable?: boolean }) {
+  const s = w / 2 + 3;
+  // Pull the × slightly inside the pipe so it sits on the channel end.
+  let cx = at.x;
+  let cy = at.y;
+  if (toward) {
+    const len = Math.hypot(toward.x - at.x, toward.y - at.y) || 1;
+    const k = Math.min(s * 0.4, len / 2) / len;
+    cx += (toward.x - at.x) * k;
+    cy += (toward.y - at.y) * k;
+  }
+  return (
+    <g className="open-end">
+      <path d={`M ${cx - s} ${cy - s} L ${cx + s} ${cy + s} M ${cx + s} ${cy - s} L ${cx - s} ${cy + s}`} stroke={theme.bg} strokeWidth={5} strokeLinecap="round" pointerEvents="none" />
+      <path d={`M ${cx - s} ${cy - s} L ${cx + s} ${cy + s} M ${cx + s} ${cy - s} L ${cx - s} ${cy + s}`} stroke="var(--fc-issue)" strokeWidth={2.2} strokeLinecap="round" pointerEvents="none" />
+      {draggable && <circle cx={at.x} cy={at.y} r={s + 3} fill="transparent" data-hit="end" data-pipe={id} data-which={which} />}
     </g>
   );
 }

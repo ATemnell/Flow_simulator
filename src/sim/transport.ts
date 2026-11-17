@@ -8,9 +8,9 @@
  * blended by volume. Syringes hold a stack of plugs, nozzle first.
  */
 import { pipeVolume_uL } from '../model/geometry';
-import type { Schematic } from '../model/types';
+import { isFree, type Schematic } from '../model/types';
 import { blend, EMPTY, similar } from './color';
-import { advanceFlowCell, FLOWCELL_VOLUME_uL, initialChamber, throughFlow, type Slab } from './flowcell';
+import { advanceFlowCell, initialChamber, throughFlow, type Slab } from './flowcell';
 import type { FlowSolution } from './solver';
 
 export interface Plug {
@@ -44,7 +44,7 @@ export function initialLiquids(s: Schematic): LiquidState {
   const syringes = new Map<string, Plug[]>();
   for (const c of s.components) if (c.kind === 'pump') syringes.set(c.id, c.initialFill_uL > 0 ? [{ color: c.initialColor, vol: c.initialFill_uL }] : []);
   const chambers = new Map<string, Slab[]>();
-  for (const c of s.components) if (c.kind === 'flowcell') chambers.set(c.id, initialChamber());
+  for (const c of s.components) if (c.kind === 'flowcell') chambers.set(c.id, initialChamber(c.volume_uL));
   return { pipes, syringes, chambers };
 }
 
@@ -134,6 +134,7 @@ export function advance(s: Schematic, liq: LiquidState, sol: FlowSolution, dt: n
     const q = sol.pipeFlow.get(p.id) ?? 0;
     const plugs = liq.pipes.get(p.id);
     if (q === 0 || !plugs) continue;
+    if (isFree(p.from) || isFree(p.to)) continue; // open ends are sealed, so the solver gives no flow here
     const v = (Math.abs(q) * dt) / 60;
     if (q > 0) {
       push(inflow, p.to.comp, { port: p.to.port, seq: takeFromEnd(plugs, v) });
@@ -160,7 +161,7 @@ export function advance(s: Schematic, liq: LiquidState, sol: FlowSolution, dt: n
     if (c.kind === 'flowcell') {
       // Laminar co-flow: streams stay side by side across the chamber (see flowcell.ts).
       const portOuts = outs.map((o) => ({ port: o.port, vol: o.vol }));
-      const r = advanceFlowCell(c, liq.chambers.get(c.id) ?? initialChamber(), portIns, portOuts);
+      const r = advanceFlowCell(c, liq.chambers.get(c.id) ?? initialChamber(c.volume_uL), portIns, portOuts);
       liq.chambers.set(c.id, r.chamber);
       for (const o of outs) insertInto(o, r.outSeqs.get(o.port) ?? [{ color: EMPTY, vol: o.vol }]);
       continue;
@@ -203,7 +204,7 @@ export function maxStableDt(s: Schematic, sol: FlowSolution, pipeVolume: Map<str
   for (const c of s.components) {
     if (c.kind !== 'flowcell') continue;
     const q = Math.abs(throughFlow(c.id, c.inlets, sol.portFlow));
-    if (q > 0) dt = Math.min(dt, (0.5 * FLOWCELL_VOLUME_uL * 60) / q);
+    if (q > 0) dt = Math.min(dt, (0.5 * c.volume_uL * 60) / q);
   }
   return dt;
 }

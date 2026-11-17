@@ -2,14 +2,14 @@ import { create } from 'zustand';
 import { twoInletFlowCell } from '../examples/twoInletFlowCell';
 import { twoInletFlowCellScript } from '../examples/twoInletFlowCellScript';
 import { DEFAULT_UNITS, type ScriptUnits } from '../script/units';
-import { SCHEMATIC_VERSION, type ComponentKind, type PortRef, type Schematic, type Vec } from '../model/types';
+import { SCHEMATIC_VERSION, type ComponentKind, type PipeEnd, type Schematic, type Vec } from '../model/types';
 
 export type Tool = { type: 'select' } | { type: 'pipe' } | { type: 'place'; kind: ComponentKind };
 export type Selection = { type: 'comp'; id: string } | { type: 'pipe'; id: string } | null;
 
-/** A pipe being drawn: starts at a port, collects waypoints until it ends on another port. */
+/** A pipe being drawn: starts at a port (or an open point), collects waypoints until it ends. */
 export interface Draft {
-  start: PortRef;
+  start: PipeEnd;
   waypoints: Vec[];
 }
 

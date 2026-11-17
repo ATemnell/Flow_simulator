@@ -12,7 +12,7 @@ export const twoInletFlowCell: Schematic = {
     { id: 'resA', kind: 'reservoir', name: 'Reservoir A', pos: { x: 100, y: 300 }, rotation: 0, liquid: 'Buffer', color: '#16a34a' },
     { id: 'v1', kind: 'valve', name: 'Valve 1', pos: { x: 220, y: 190 }, rotation: 0, initialOpen: true },
     { id: 'p1', kind: 'pump', name: 'Pump 1', pos: { x: 150, y: 80 }, rotation: 0, syringeVolume_uL: 500, initialFill_uL: 400, initialColor: '#dc2626' },
-    { id: 'fc1', kind: 'flowcell', name: 'Flow cell', pos: { x: 400, y: 200 }, rotation: 0, inlets: 2, outlets: 1 },
+    { id: 'fc1', kind: 'flowcell', name: 'Flow cell', pos: { x: 400, y: 200 }, rotation: 0, inlets: 2, outlets: 1, volume_uL: 20 },
     { id: 'j1', kind: 'junction', name: 'J1', pos: { x: 520, y: 200 }, rotation: 0 },
     { id: 'p2', kind: 'pump', name: 'Pump 2', pos: { x: 650, y: 200 }, rotation: 180, syringeVolume_uL: 1000, initialFill_uL: 0, initialColor: '#ffffff' },
     { id: 'v2', kind: 'valve', name: 'Valve 2', pos: { x: 520, y: 290 }, rotation: 90, initialOpen: false },

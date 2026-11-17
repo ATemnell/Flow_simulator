@@ -90,7 +90,7 @@ describe('two-inlet flow cell example', () => {
 describe('two outlets take separate slices', () => {
   // Symmetric layout: reservoir G → inlet 1, reservoir R → inlet 2; outlet 1 → pump A, outlet 2 → pump B.
   const comps: Component[] = [
-    { id: 'fc', kind: 'flowcell', name: 'FC', pos: { x: 200, y: 0 }, rotation: 0, inlets: 2, outlets: 2 },
+    { id: 'fc', kind: 'flowcell', name: 'FC', pos: { x: 200, y: 0 }, rotation: 0, inlets: 2, outlets: 2, volume_uL: 20 },
     { id: 'rg', kind: 'reservoir', name: 'RG', pos: { x: 60, y: -40 }, rotation: 0, liquid: 'g', color: G },
     { id: 'rr', kind: 'reservoir', name: 'RR', pos: { x: 60, y: 40 }, rotation: 180, liquid: 'r', color: R },
     { id: 'pa', kind: 'pump', name: 'A', pos: { x: 360, y: -10 }, rotation: 180, syringeVolume_uL: 1000, initialFill_uL: 0, initialColor: '#ffffff' },

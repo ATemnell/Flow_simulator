@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { deleteComponent, deletePipe, rotateComponent, updateComponent, updatePipe } from '../model/edit';
 import { channelArea, pipeLength_mm, pipeVolume_uL } from '../model/geometry';
-import type { Component, Pipe, Schematic } from '../model/types';
+import { endComp, isFree, type Component, type Pipe, type PipeEnd, type Schematic } from '../model/types';
 import { useApp } from '../ui/store';
 
 /** Text/number input that commits on blur or Enter (one undo step per edit, not per keystroke). */
@@ -98,8 +98,10 @@ function DocumentProps({ s }: { s: Schematic }) {
         <ul>
           <li>Pick a part under <b>Add</b> and click on the canvas to place it. Shift-click places several.</li>
           <li>
-            <b>Pipe</b> (P): click a port, click to add corners, click another port to finish. Click on an existing pipe to start or end a T-junction.
+            <b>Pipe</b> (P): click a port or anywhere on the canvas, click to add corners, then click a port to finish, or <b>double-click</b> (or Enter) to leave the end open (×). Click on an existing pipe to start or end a T-junction.
           </li>
+          <li>Drag an × onto a port to connect it. A part placed with a port on an × connects automatically.</li>
+          <li>Drop a valve on a straight pipe section and it is cut into the pipe.</li>
           <li>Drag a part to move it. Drag a pipe segment to re-route it.</li>
           <li>Pipes may cross; they only connect at junction dots.</li>
         </ul>
@@ -140,7 +142,7 @@ function ComponentProps({ s, c }: { s: Schematic; c: Component }) {
     if (name.includes(',')) return 'Names cannot contain commas (they are CSV column headers)';
     return s.components.some((k) => k.id !== c.id && k.name === name) ? 'Another part already has this name' : null;
   };
-  const pipesHere = s.pipes.filter((p) => p.from.comp === c.id || p.to.comp === c.id).length;
+  const pipesHere = s.pipes.filter((p) => endComp(p.from) === c.id || endComp(p.to) === c.id).length;
 
   return (
     <>
@@ -178,7 +180,8 @@ function ComponentProps({ s, c }: { s: Schematic; c: Component }) {
         <>
           <Field label="Inlets" type="number" min={1} max={8} value={c.inlets} validate={intIn(1, 8)} onCommit={(v) => set({ inlets: Number(v) })} />
           <Field label="Outlets" type="number" min={1} max={8} value={c.outlets} validate={intIn(1, 8)} onCommit={(v) => set({ outlets: Number(v) })} />
-          <p className="note">Reducing inlets/outlets removes pipes on the removed ports.</p>
+          <Field label="Volume" type="number" unit="µL" min={0.1} value={c.volume_uL} validate={positive} onCommit={(v) => set({ volume_uL: Number(v) })} />
+          <p className="note">Pipes on removed inlets/outlets are kept with open ends.</p>
         </>
       )}
 
@@ -212,7 +215,7 @@ function ComponentProps({ s, c }: { s: Schematic; c: Component }) {
 function PipeProps({ s, p }: { s: Schematic; p: Pipe }) {
   const commit = useApp((st) => st.commit);
   const select = useApp((st) => st.select);
-  const name = (id: string) => s.components.find((c) => c.id === id)?.name ?? id;
+  const name = (e: PipeEnd) => (isFree(e) ? 'open end ×' : (s.components.find((c) => c.id === e.comp)?.name ?? e.comp));
   let length = 0;
   let volume = 0;
   try {
@@ -225,8 +228,9 @@ function PipeProps({ s, p }: { s: Schematic; p: Pipe }) {
     <>
       <h2>Pipe</h2>
       <p className="note">
-        {name(p.from.comp)} → {name(p.to.comp)}
+        {name(p.from)} → {name(p.to)}
       </p>
+      {(isFree(p.from) || isFree(p.to)) && <p className="note">Drag an × onto a port to connect it. Open ends act as sealed ends when running.</p>}
       <Field label="Width" type="number" unit="mm" min={0.01} step={0.05} value={p.width_mm} validate={positive} onCommit={(v) => commit(updatePipe(s, p.id, { width_mm: Number(v) }))} />
       <Field label="Depth" type="number" unit="mm" min={0.01} step={0.05} value={p.depth_mm} validate={positive} onCommit={(v) => commit(updatePipe(s, p.id, { depth_mm: Number(v) }))} />
       <Row label="Cross-section">

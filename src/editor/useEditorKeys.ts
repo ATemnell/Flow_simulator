@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { deleteComponent, deletePipe, rotateComponent } from '../model/edit';
 import { useRun } from '../run/runStore';
 import { useApp } from '../ui/store';
+import { finishDraftOpen } from './draft';
 
 /** Global editor shortcuts. Ignored while typing in a form field. */
 export function useEditorKeys() {
@@ -34,6 +35,9 @@ export function useEditorKeys() {
       } else if (e.key === 'Escape') {
         if (st.draft || st.tool.type !== 'select') st.setTool({ type: 'select' });
         else st.select(null);
+      } else if (e.key === 'Enter' && st.draft) {
+        e.preventDefault();
+        finishDraftOpen();
       } else if (e.key === 'Backspace' && st.draft) {
         e.preventDefault();
         st.setDraft({ ...st.draft, waypoints: st.draft.waypoints.slice(0, -2) });

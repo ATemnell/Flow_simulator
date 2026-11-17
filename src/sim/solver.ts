@@ -10,7 +10,7 @@
  * Units: flows in µL/min. A pipe's flow is positive when liquid moves from its `from` end to its `to` end.
  */
 import { channelConductance, localPorts, pipeLength_mm } from '../model/geometry';
-import type { Schematic } from '../model/types';
+import { isFree, type PipeEnd, type Schematic } from '../model/types';
 
 /** The controllable state at one instant. Missing entries mean pump idle / valve at its initial state. */
 export interface FlowInputs {
@@ -96,7 +96,14 @@ export function solveFlows(s: Schematic, inputs: FlowInputs): FlowSolution {
     } catch {
       continue; // dangling pipe — validation reports it
     }
-    edges.push({ a: key(p.from.comp, p.from.port), b: key(p.to.comp, p.to.port), g: channelConductance(p.width_mm, p.depth_mm, Math.max(len, MIN_LENGTH_MM)), pipeId: p.id });
+    // An open (unconnected) pipe end is its own node with nothing else attached: a sealed dead end.
+    const endKey = (e: PipeEnd, which: string) => {
+      if (!isFree(e)) return key(e.comp, e.port);
+      const k = `#open:${p.id}:${which}`;
+      nodes.add(k);
+      return k;
+    };
+    edges.push({ a: endKey(p.from, 'from'), b: endKey(p.to, 'to'), g: channelConductance(p.width_mm, p.depth_mm, Math.max(len, MIN_LENGTH_MM)), pipeId: p.id });
   }
 
   // Connected sections (union–find).

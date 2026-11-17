@@ -23,14 +23,12 @@ export interface Slab {
   vol: number;
 }
 
-/** The flow cell has no parameters, so the chamber gets a fixed nominal volume. */
-export const FLOWCELL_VOLUME_uL = 20;
 
 const TINY = 1e-9;
 const MAX_SLABS = 300;
 
-export function initialChamber(): Slab[] {
-  return [{ bands: [{ color: EMPTY, frac: 1 }], vol: FLOWCELL_VOLUME_uL }];
+export function initialChamber(volume_uL: number): Slab[] {
+  return [{ bands: [{ color: EMPTY, frac: 1 }], vol: volume_uL }];
 }
 
 export interface PortIn {

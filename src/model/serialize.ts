@@ -1,5 +1,5 @@
 import { localPorts } from './geometry';
-import { SCHEMATIC_VERSION, type Component, type Schematic } from './types';
+import { isFree, SCHEMATIC_VERSION, type Component, type Schematic } from './types';
 import { DEFAULT_UNITS, type ScriptUnits } from '../script/units';
 
 /** A saved file: the schematic plus (optionally) its CSV script. */
@@ -46,7 +46,9 @@ export function parseSchematic(json: string): Schematic {
     }
     return p;
   });
-  const s: Schematic = { version: raw.version, name: String(raw.name ?? 'Untitled'), components: raw.components, pipes };
+  // Older files have no flow cell volume: use the default.
+  const components = raw.components.map((c: any) => (c && c.kind === 'flowcell' && typeof c.volume_uL !== 'number' ? { ...c, volume_uL: 20 } : c));
+  const s: Schematic = { version: raw.version, name: String(raw.name ?? 'Untitled'), components, pipes };
   const problems = validateSchematic(s);
   if (problems.length) throw new Error(problems.join('\n'));
   return s;
@@ -73,6 +75,10 @@ export function validateSchematic(s: Schematic): string[] {
     pipeIds.add(p.id);
     if (!(p.width_mm > 0) || !(p.depth_mm > 0)) problems.push(`Pipe '${p.id}' needs a positive width and depth`);
     for (const end of [p.from, p.to]) {
+      if (isFree(end)) {
+        if (!end.free || !Number.isFinite(end.free.x) || !Number.isFinite(end.free.y)) problems.push(`Pipe '${p.id}' has an open end without a position`);
+        continue;
+      }
       const c = byId.get(end.comp);
       if (!c) {
         problems.push(`Pipe '${p.id}' references unknown component '${end.comp}'`);
