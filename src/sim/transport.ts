@@ -10,6 +10,7 @@
 import { pipeVolume_uL } from '../model/geometry';
 import type { Schematic } from '../model/types';
 import { blend, EMPTY, similar } from './color';
+import { advanceFlowCell, FLOWCELL_VOLUME_uL, initialChamber, throughFlow, type Slab } from './flowcell';
 import type { FlowSolution } from './solver';
 
 export interface Plug {
@@ -22,6 +23,8 @@ export interface LiquidState {
   pipes: Map<string, Plug[]>;
   /** Per pump, syringe contents ordered from the nozzle inwards. Total = fill volume. */
   syringes: Map<string, Plug[]>;
+  /** Per flow cell, chamber content from the inlet side to the outlet side. */
+  chambers: Map<string, Slab[]>;
 }
 
 const TINY = 1e-9;
@@ -40,7 +43,9 @@ export function initialLiquids(s: Schematic): LiquidState {
   }
   const syringes = new Map<string, Plug[]>();
   for (const c of s.components) if (c.kind === 'pump') syringes.set(c.id, c.initialFill_uL > 0 ? [{ color: c.initialColor, vol: c.initialFill_uL }] : []);
-  return { pipes, syringes };
+  const chambers = new Map<string, Slab[]>();
+  for (const c of s.components) if (c.kind === 'flowcell') chambers.set(c.id, initialChamber());
+  return { pipes, syringes, chambers };
 }
 
 export const totalVolume = (plugs: Plug[]) => plugs.reduce((a, p) => a + p.vol, 0);
@@ -116,8 +121,8 @@ export interface TransportContext {
  * volume below a pipe's own volume (see maxStableDt).
  */
 export function advance(s: Schematic, liq: LiquidState, sol: FlowSolution, dt: number, ctx: TransportContext): void {
-  const inflow = new Map<string, Plug[][]>(); // component id → incoming sequences (exit order)
-  const outputs = new Map<string, { pipeId: string; vol: number; atFrom: boolean }[]>();
+  const inflow = new Map<string, { port: string; seq: Plug[] }[]>(); // component id → incoming sequences (exit order)
+  const outputs = new Map<string, { pipeId: string; port: string; vol: number; atFrom: boolean }[]>();
   const push = <T,>(m: Map<string, T[]>, k: string, v: T) => {
     const list = m.get(k);
     if (list) list.push(v);
@@ -131,19 +136,35 @@ export function advance(s: Schematic, liq: LiquidState, sol: FlowSolution, dt: n
     if (q === 0 || !plugs) continue;
     const v = (Math.abs(q) * dt) / 60;
     if (q > 0) {
-      push(inflow, p.to.comp, takeFromEnd(plugs, v));
-      push(outputs, p.from.comp, { pipeId: p.id, vol: v, atFrom: true });
+      push(inflow, p.to.comp, { port: p.to.port, seq: takeFromEnd(plugs, v) });
+      push(outputs, p.from.comp, { pipeId: p.id, port: p.from.port, vol: v, atFrom: true });
     } else {
-      push(inflow, p.from.comp, takeFromStart(plugs, v));
-      push(outputs, p.to.comp, { pipeId: p.id, vol: v, atFrom: false });
+      push(inflow, p.from.comp, { port: p.from.port, seq: takeFromStart(plugs, v) });
+      push(outputs, p.to.comp, { pipeId: p.id, port: p.to.port, vol: v, atFrom: false });
     }
   }
 
+  const insertInto = (o: { pipeId: string; atFrom: boolean }, part: Plug[]) => {
+    const plugs = liq.pipes.get(o.pipeId)!;
+    // Liquid that entered first is pushed furthest along.
+    liq.pipes.set(o.pipeId, compact(o.atFrom ? [...[...part].reverse(), ...plugs] : [...plugs, ...part]));
+  };
+
   // 2. Each component turns what came in into what goes out.
   for (const c of s.components) {
-    const ins = inflow.get(c.id) ?? [];
+    const portIns = inflow.get(c.id) ?? [];
+    const ins = portIns.map((i) => i.seq);
     const outs = outputs.get(c.id) ?? [];
     const outVol = outs.reduce((a, o) => a + o.vol, 0);
+
+    if (c.kind === 'flowcell') {
+      // Laminar co-flow: streams stay side by side across the chamber (see flowcell.ts).
+      const portOuts = outs.map((o) => ({ port: o.port, vol: o.vol }));
+      const r = advanceFlowCell(c, liq.chambers.get(c.id) ?? initialChamber(), portIns, portOuts);
+      liq.chambers.set(c.id, r.chamber);
+      for (const o of outs) insertInto(o, r.outSeqs.get(o.port) ?? [{ color: EMPTY, vol: o.vol }]);
+      continue;
+    }
 
     let source: Plug[] | null = null;
     if (c.kind === 'pump') {
@@ -166,21 +187,23 @@ export function advance(s: Schematic, liq: LiquidState, sol: FlowSolution, dt: n
 
     const srcVol = source ? totalVolume(source) : 0;
     for (const o of outs) {
-      const part = srcVol > TINY ? scaleSeq(source!, o.vol / srcVol) : [{ color: EMPTY, vol: o.vol }];
-      const plugs = liq.pipes.get(o.pipeId)!;
-      // Liquid that entered first is pushed furthest along.
-      liq.pipes.set(o.pipeId, compact(o.atFrom ? [...[...part].reverse(), ...plugs] : [...plugs, ...part]));
+      insertInto(o, srcVol > TINY ? scaleSeq(source!, o.vol / srcVol) : [{ color: EMPTY, vol: o.vol }]);
     }
   }
 }
 
-/** Largest step (s) that moves at most half of any pipe's volume. */
+/** Largest step (s) that moves at most half of any pipe's (or flow cell chamber's) volume. */
 export function maxStableDt(s: Schematic, sol: FlowSolution, pipeVolume: Map<string, number>): number {
   let dt = Infinity;
   for (const p of s.pipes) {
     const q = Math.abs(sol.pipeFlow.get(p.id) ?? 0);
     const v = pipeVolume.get(p.id) ?? 0;
     if (q > 0 && v > 0) dt = Math.min(dt, (0.5 * v * 60) / q);
+  }
+  for (const c of s.components) {
+    if (c.kind !== 'flowcell') continue;
+    const q = Math.abs(throughFlow(c.id, c.inlets, sol.portFlow));
+    if (q > 0) dt = Math.min(dt, (0.5 * FLOWCELL_VOLUME_uL * 60) / q);
   }
   return dt;
 }

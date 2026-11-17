@@ -1,6 +1,7 @@
 import { FLOWCELL_WIDTH, flowCellHeight, localBBox, SYRINGE, syringeLayout } from '../model/geometry';
 import type { Component, FlowCell, Pump, Reservoir } from '../model/types';
 import { EMPTY } from '../sim/color';
+import type { Slab } from '../sim/flowcell';
 import type { Plug } from '../sim/transport';
 import { theme } from './theme';
 
@@ -9,6 +10,8 @@ export interface ComponentLive {
   syringe?: Plug[];
   valveOpen?: boolean;
   reservoirColor?: string;
+  /** Flow cell chamber content, inlet side first. */
+  chamber?: Slab[];
   /** Part of an unsolvable section (e.g. pump against a closed valve). */
   issue?: boolean;
 }
@@ -40,7 +43,7 @@ function symbol(c: Component, live?: ComponentLive) {
     case 'valve':
       return <ValveSymbol open={live?.valveOpen ?? c.initialOpen} />;
     case 'flowcell':
-      return <FlowCellSymbol c={c} />;
+      return <FlowCellSymbol c={c} chamber={live?.chamber} />;
     case 'reservoir':
       return <ReservoirSymbol c={c} color={live?.reservoirColor ?? c.color} />;
     case 'waste':
@@ -94,13 +97,41 @@ function ValveSymbol({ open }: { open: boolean }) {
   );
 }
 
-function FlowCellSymbol({ c }: { c: FlowCell }) {
+/**
+ * Flow cell: body with an inner chamber. During a run the chamber shows the co-flowing streams as
+ * bands (top to bottom = inlet order), advancing from the inlet side (left) to the outlet side.
+ */
+function FlowCellSymbol({ c, chamber }: { c: FlowCell; chamber?: Slab[] }) {
   const h = flowCellHeight(c);
   const w = FLOWCELL_WIDTH;
+  const x0 = -w / 2 + 10;
+  const y0 = -h / 2 + 8;
+  const W = w - 20;
+  const H = h - 16;
+  const total = chamber?.reduce((a, s) => a + s.vol, 0) ?? 0;
+  const rects: JSX.Element[] = [];
+  if (chamber && total > 0) {
+    let x = x0;
+    chamber.forEach((s, i) => {
+      const sw = (s.vol / total) * W;
+      let y = y0;
+      s.bands.forEach((b, j) => {
+        const bh = b.frac * H;
+        if (b.color !== EMPTY && sw > 0.05 && bh > 0.05) rects.push(<rect key={`${i}-${j}`} x={x} y={y} width={sw + 0.4} height={bh + 0.4} fill={b.color} />);
+        y += bh;
+      });
+      x += sw;
+    });
+  }
   return (
     <g>
       <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={6} fill={theme.body} stroke={theme.bodyStroke} strokeWidth={1.5} />
-      <rect x={-w / 2 + 10} y={-h / 2 + 8} width={w - 20} height={h - 16} rx={3} fill={theme.channel} stroke={theme.wall} strokeWidth={1.5} />
+      <clipPath id={`chamber-${c.id}`}>
+        <rect x={x0} y={y0} width={W} height={H} rx={3} />
+      </clipPath>
+      <rect x={x0} y={y0} width={W} height={H} rx={3} fill={theme.channel} />
+      <g clipPath={`url(#chamber-${c.id})`}>{rects}</g>
+      <rect x={x0} y={y0} width={W} height={H} rx={3} fill="none" stroke={theme.wall} strokeWidth={1.5} />
     </g>
   );
 }
