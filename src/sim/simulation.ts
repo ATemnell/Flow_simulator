@@ -21,6 +21,7 @@ export class Simulation {
   solution: FlowSolution;
   liquids: LiquidState;
   reservoirColor = new Map<string, string>();
+  reservoirLiquid = new Map<string, string>();
   events: SimEvent[] = [];
   private pipeVolume = new Map<string, number>();
   private pumps: Pump[];
@@ -30,7 +31,11 @@ export class Simulation {
     this.inputs = defaultInputs(s);
     this.liquids = initialLiquids(s);
     this.pumps = s.components.filter((c): c is Pump => c.kind === 'pump');
-    for (const c of s.components) if (c.kind === 'reservoir') this.reservoirColor.set(c.id, c.color);
+    for (const c of s.components) {
+      if (c.kind !== 'reservoir') continue;
+      this.reservoirColor.set(c.id, c.color);
+      this.reservoirLiquid.set(c.id, c.liquid);
+    }
     for (const p of s.pipes) {
       try {
         this.pipeVolume.set(p.id, pipeVolume_uL(s, p));
@@ -57,6 +62,12 @@ export class Simulation {
 
   setReservoirColor(id: string, color: string) {
     this.reservoirColor.set(id, color);
+  }
+
+  /** Change the liquid a reservoir supplies (colour, and optionally its name). */
+  setReservoir(id: string, color: string, liquid?: string) {
+    this.reservoirColor.set(id, color);
+    if (liquid !== undefined) this.reservoirLiquid.set(id, liquid);
   }
 
   /** Replace the contents of a syringe (e.g. a script setting the initial fill). */

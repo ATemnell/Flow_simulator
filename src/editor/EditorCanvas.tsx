@@ -379,6 +379,7 @@ export function EditorCanvas() {
                     syringe: c.kind === 'pump' ? sim.liquids.syringes.get(c.id) : undefined,
                     valveOpen: c.kind === 'valve' ? sim.inputs.valveOpen[c.id] : undefined,
                     reservoirColor: c.kind === 'reservoir' ? sim.reservoirColor.get(c.id) : undefined,
+                    reservoirLiquid: c.kind === 'reservoir' ? sim.reservoirLiquid.get(c.id) : undefined,
                     chamber: c.kind === 'flowcell' ? sim.liquids.chambers.get(c.id) : undefined,
                     issue: issueComps.has(c.id),
                   }

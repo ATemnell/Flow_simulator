@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { twoInletFlowCell } from '../examples/twoInletFlowCell';
+import { twoInletFlowCellScript } from '../examples/twoInletFlowCellScript';
+import { DEFAULT_UNITS, type ScriptUnits } from '../script/units';
 import { SCHEMATIC_VERSION, type ComponentKind, type PortRef, type Schematic, type Vec } from '../model/types';
 
 export type Tool = { type: 'select' } | { type: 'pipe' } | { type: 'place'; kind: ComponentKind };
@@ -18,6 +20,11 @@ interface AppState {
   mode: Mode;
   setMode: (m: Mode) => void;
   schematic: Schematic;
+  /** CSV script text and the units it is written in. */
+  script: string;
+  units: ScriptUnits;
+  setScript: (text: string) => void;
+  setUnits: (u: ScriptUnits) => void;
   /** Bumped whenever a different document is loaded (used to re-fit the view). */
   docVersion: number;
   past: Schematic[];
@@ -29,7 +36,8 @@ interface AppState {
   draft: Draft | null;
   error: string | null;
 
-  load: (s: Schematic) => void;
+  /** Load a document (schematic + optional script). */
+  load: (s: Schematic, script?: { text: string; units: ScriptUnits }) => void;
   /** Apply an edit as one undoable step. */
   commit: (s: Schematic) => void;
   /** Start a gesture: subsequent setLive calls are collapsed into one undo step by endGesture. */
@@ -57,6 +65,10 @@ export const useApp = create<AppState>((set, get) => ({
     set({ mode, tool: { type: 'select' }, draft: null });
   },
   schematic: twoInletFlowCell,
+  script: twoInletFlowCellScript,
+  units: DEFAULT_UNITS,
+  setScript: (script) => set({ script }),
+  setUnits: (units) => set({ units }),
   docVersion: 0,
   past: [],
   future: [],
@@ -66,8 +78,8 @@ export const useApp = create<AppState>((set, get) => ({
   draft: null,
   error: null,
 
-  load: (schematic) =>
-    set((st) => ({ schematic, docVersion: st.docVersion + 1, past: [], future: [], gestureBase: null, selection: null, draft: null, error: null, tool: { type: 'select' }, mode: 'edit' })),
+  load: (schematic, script) =>
+    set((st) => ({ schematic, script: script?.text ?? '', units: script?.units ?? DEFAULT_UNITS, docVersion: st.docVersion + 1, past: [], future: [], gestureBase: null, selection: null, draft: null, error: null, tool: { type: 'select' }, mode: 'edit' })),
 
   commit: (s) => {
     const cur = get().schematic;

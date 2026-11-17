@@ -1,15 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { Pump, Reservoir, Valve } from '../model/types';
+import { fmtTime } from '../script/ScriptDrawer';
 import { useApp } from '../ui/store';
-import { useRun } from './runStore';
+import { scriptRunnable, useRun } from './runStore';
 
 const SPEEDS = [1, 5, 10, 30, 60, 200];
-
-function fmtTime(t: number): string {
-  const m = Math.floor(t / 60);
-  const s = t - m * 60;
-  return `${m}:${s.toFixed(1).padStart(4, '0')}`;
-}
 
 /** Parse a flow rate; accepts a comma as decimal mark. Null if not a complete number. */
 export function parseFlow(text: string): number | null {
@@ -20,14 +15,14 @@ export function parseFlow(text: string): number | null {
 
 const fmt = (x: number, digits = 1) => (Math.abs(x) < 1e-9 ? '0' : x.toFixed(digits));
 
-/**
- * Manual test controls for a run. These stand in for the CSV script (phase 6):
- * set pump flows, switch valves and change reservoir liquids while the animation plays.
- */
+/** Right-hand panel in Run mode: playback, live readouts, and either script or manual control. */
 export function RunPanel() {
   const sim = useRun((s) => s.sim);
+  const runner = useRun((s) => s.runner);
+  const control = useRun((s) => s.control);
+  const script = useRun((s) => s.script);
   useRun((s) => s.frame);
-  const { playing, speed, setPlaying, setSpeed, reset } = useRun();
+  const { playing, speed, setPlaying, setSpeed, reset, setControl, seek } = useRun();
   const selection = useApp((s) => s.selection);
   if (!sim) return null;
   const s = sim.schematic;
@@ -36,19 +31,48 @@ export function RunPanel() {
   const reservoirs = s.components.filter((c): c is Reservoir => c.kind === 'reservoir');
   const selPipe = selection?.type === 'pipe' ? s.pipes.find((p) => p.id === selection.id) : undefined;
   const nameOf = (id: string) => s.components.find((c) => c.id === id)?.name ?? id;
+  const canScript = scriptRunnable(script);
+  const manual = control === 'manual';
 
   return (
     <aside className="properties run-panel">
-      <h2>Test run</h2>
+      <div className="tabs" role="tablist">
+        <button role="tab" aria-selected={!manual} className={!manual ? 'active' : ''} disabled={!canScript} onClick={() => setControl('script')} title={canScript ? '' : 'Fix the script errors (or write a script) to run it'}>
+          Script
+        </button>
+        <button role="tab" aria-selected={manual} className={manual ? 'active' : ''} onClick={() => setControl('manual')}>
+          Manual
+        </button>
+      </div>
+      {!canScript && <p className="hint">{script && script.errors.length ? 'The script has errors (see below the canvas), so manual control is used.' : 'No script yet: using manual control.'}</p>}
+
       <div className="transport">
         <button className="primary" onClick={() => setPlaying(!playing)} title="Space">
-          {playing ? 'Pause' : 'Play'}
+          {playing ? 'Pause' : runner?.done ? 'Replay' : 'Play'}
         </button>
         <button onClick={reset}>Reset</button>
         <span className="clock" aria-label="Simulated time">
           {fmtTime(sim.t)}
         </span>
       </div>
+      {runner && (
+        <div className="timeline-ends">
+          <span>0:00</span>
+          <span>{fmtTime(runner.duration)}</span>
+        </div>
+      )}
+      {runner && (
+        <input
+          className="timeline"
+          type="range"
+          min={0}
+          max={runner.duration}
+          step={0.1}
+          value={Math.min(sim.t, runner.duration)}
+          aria-label="Script time"
+          onChange={(e) => seek(Number(e.target.value))}
+        />
+      )}
       <label className="field">
         <span>Speed</span>
         <span className="field-input">
@@ -74,16 +98,28 @@ export function RunPanel() {
         <>
           <h3>Pumps</h3>
           <p className="note">Positive flow dispenses, negative aspirates.</p>
-          {pumps.every((p) => !(sim.inputs.pumpFlow[p.id] ?? 0)) && (
+          {manual && pumps.every((p) => !(sim.inputs.pumpFlow[p.id] ?? 0)) && (
             <p className="hint" role="status">
               All pumps are stopped, so no liquid moves. Enter a flow rate below, e.g. <b>30</b> for {pumps[0].name}.
             </p>
           )}
         </>
       )}
-      {pumps.map((p) => (
-        <PumpRow key={p.id} pump={p} />
-      ))}
+      {pumps.map((p) =>
+        manual ? (
+          <PumpRow key={p.id} pump={p} />
+        ) : (
+          <div className="pump-row" key={p.id}>
+            <div className="pump-head">
+              <b>{p.name}</b>
+              <span className="note">
+                {fmt(sim.pumpFill(p.id), 0)} / {p.syringeVolume_uL} µL
+              </span>
+            </div>
+            <div className="readout">{(sim.inputs.pumpFlow[p.id] ?? 0) === 0 ? 'idle' : `${fmt(sim.inputs.pumpFlow[p.id], 2)} µL/min (${sim.inputs.pumpFlow[p.id] > 0 ? 'dispensing' : 'aspirating'})`}</div>
+          </div>
+        ),
+      )}
 
       {valves.length > 0 && <h3>Valves</h3>}
       {valves.map((v) => {
@@ -92,9 +128,13 @@ export function RunPanel() {
           <div className="field" key={v.id}>
             <span>{v.name}</span>
             <span className="field-input">
-              <button className={open ? 'toggle on' : 'toggle'} onClick={() => useRun.getState().mutate((x) => x.setValve(v.id, !open))}>
-                {open ? 'Open' : 'Closed'}
-              </button>
+              {manual ? (
+                <button className={open ? 'toggle on' : 'toggle'} onClick={() => useRun.getState().mutate((x) => x.setValve(v.id, !open))}>
+                  {open ? 'Open' : 'Closed'}
+                </button>
+              ) : (
+                <span className={open ? 'readout on' : 'readout'}>{open ? 'Open' : 'Closed'}</span>
+              )}
             </span>
           </div>
         );
@@ -105,7 +145,13 @@ export function RunPanel() {
         <label className="field" key={r.id}>
           <span>{r.name}</span>
           <span className="field-input">
-            <input type="color" value={sim.reservoirColor.get(r.id) ?? r.color} onChange={(e) => useRun.getState().mutate((x) => x.setReservoirColor(r.id, e.target.value))} />
+            {manual ? (
+              <input type="color" value={sim.reservoirColor.get(r.id) ?? r.color} onChange={(e) => useRun.getState().mutate((x) => x.setReservoirColor(r.id, e.target.value))} />
+            ) : (
+              <span className="readout">
+                <span className="swatch" style={{ background: sim.reservoirColor.get(r.id) }} /> {sim.reservoirLiquid.get(r.id)}
+              </span>
+            )}
           </span>
         </label>
       ))}
@@ -136,7 +182,6 @@ export function RunPanel() {
           </ul>
         </>
       )}
-      <p className="note small">Temporary controls: the CSV script (phase 6) will drive these.</p>
     </aside>
   );
 }

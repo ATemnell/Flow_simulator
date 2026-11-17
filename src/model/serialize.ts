@@ -1,5 +1,24 @@
 import { localPorts } from './geometry';
 import { SCHEMATIC_VERSION, type Component, type Schematic } from './types';
+import { DEFAULT_UNITS, type ScriptUnits } from '../script/units';
+
+/** A saved file: the schematic plus (optionally) its CSV script. */
+export interface DocumentScript {
+  text: string;
+  units: ScriptUnits;
+}
+
+export function serializeDocument(s: Schematic, script?: DocumentScript): string {
+  return JSON.stringify({ ...s, version: SCHEMATIC_VERSION, ...(script && script.text.trim() ? { script } : {}) }, null, 2);
+}
+
+export function parseDocument(json: string): { schematic: Schematic; script?: DocumentScript } {
+  const schematic = parseSchematic(json);
+  const raw = JSON.parse(json);
+  const sc = raw.script;
+  if (sc && typeof sc.text === 'string') return { schematic, script: { text: sc.text, units: { ...DEFAULT_UNITS, ...(sc.units ?? {}) } } };
+  return { schematic };
+}
 
 export function serializeSchematic(s: Schematic): string {
   return JSON.stringify({ ...s, version: SCHEMATIC_VERSION }, null, 2);

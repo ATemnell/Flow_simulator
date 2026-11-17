@@ -10,6 +10,7 @@ export interface ComponentLive {
   syringe?: Plug[];
   valveOpen?: boolean;
   reservoirColor?: string;
+  reservoirLiquid?: string;
   /** Flow cell chamber content, inlet side first. */
   chamber?: Slab[];
   /** Part of an unsolvable section (e.g. pump against a closed valve). */
@@ -178,7 +179,7 @@ function Label({ c, live }: { c: Component; live?: ComponentLive }) {
       break;
     case 'reservoir':
       dy = 40;
-      sub = c.liquid;
+      sub = live?.reservoirLiquid ?? c.liquid;
       break;
     case 'waste':
       dy = 33;

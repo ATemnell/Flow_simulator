@@ -4,7 +4,11 @@ import { Palette } from '../editor/Palette';
 import { PropertiesPanel } from '../editor/PropertiesPanel';
 import { useEditorKeys } from '../editor/useEditorKeys';
 import { twoInletFlowCell } from '../examples/twoInletFlowCell';
-import { parseSchematic, serializeSchematic, validateSchematic } from '../model/serialize';
+import { twoInletFlowCellScript } from '../examples/twoInletFlowCellScript';
+import { parseDocument, serializeDocument, validateSchematic } from '../model/serialize';
+import { compileScript } from '../script/compile';
+import { ScriptDrawer } from '../script/ScriptDrawer';
+import { DEFAULT_UNITS } from '../script/units';
 import { RunPanel } from '../run/RunPanel';
 import { useRun } from '../run/runStore';
 import { useRunLoop } from '../run/useRunLoop';
@@ -29,7 +33,8 @@ export function App() {
   const startRun = () => {
     const problems = validateSchematic(schematic);
     if (problems.length) return setError(`Cannot run:\n${problems.join('\n')}`);
-    useRun.getState().start(schematic);
+    const { script, units } = useApp.getState();
+    useRun.getState().start(schematic, script.trim() ? compileScript(script, schematic, units) : null);
     setMode('run');
   };
 
@@ -37,7 +42,8 @@ export function App() {
     const f = await pickTextFile('.json,application/json');
     if (!f) return;
     try {
-      load(parseSchematic(f.text));
+      const doc = parseDocument(f.text);
+      load(doc.schematic, doc.script);
     } catch (e) {
       setError(`Could not open ${f.name}: ${(e as Error).message}`);
     }
@@ -47,7 +53,8 @@ export function App() {
     const problems = validateSchematic(schematic);
     if (problems.length) return setError(`Cannot save:\n${problems.join('\n')}`);
     const base = schematic.name.trim().replace(/[^\w-]+/g, '_') || 'schematic';
-    downloadText(`${base}.json`, serializeSchematic(schematic));
+    const { script, units } = useApp.getState();
+    downloadText(`${base}.json`, serializeDocument(schematic, { text: script, units }));
   };
 
   const running = mode === 'run';
@@ -76,7 +83,7 @@ export function App() {
         )}
         <div className="spacer" />
         <button onClick={() => load(emptySchematic())}>New</button>
-        <button onClick={() => load(twoInletFlowCell)}>Example</button>
+        <button onClick={() => load(twoInletFlowCell, { text: twoInletFlowCellScript, units: DEFAULT_UNITS })}>Example</button>
         <button onClick={open}>Open…</button>
         <button onClick={save}>Save</button>
       </header>
@@ -88,14 +95,17 @@ export function App() {
       )}
       <main className="workspace">
         {!running && <Palette />}
-        <div className="canvas-wrap">
-          <EditorCanvas />
+        <div className="center">
+          <div className="canvas-wrap">
+            <EditorCanvas />
+          </div>
+          <ScriptDrawer />
         </div>
         {running ? <RunPanel /> : <PropertiesPanel />}
       </main>
       <footer className="statusbar">
         {running
-          ? 'Running: editing is locked. Click a pipe to see its flow. Space = play/pause.'
+          ? 'Running: editing is locked. Click a pipe to see its flow, click a script step to jump to it. Space = play/pause.'
           : `${schematic.components.filter((c) => c.kind !== 'junction').length} parts · ${schematic.pipes.length} pipes`}
       </footer>
     </div>
