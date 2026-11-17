@@ -576,3 +576,8 @@ button.link {
   color: var(--fc-muted);
   margin-bottom: -2px;
 }
+
+.doc-name .unsaved {
+  color: #b45309;
+  font-weight: 600;
+}

@@ -52,6 +52,23 @@ interface AppState {
   setTool: (t: Tool) => void;
   setDraft: (d: Draft | null) => void;
   setError: (e: string | null) => void;
+
+  /** The document as last saved or opened, to detect unsaved changes. */
+  saved: { schematic: Schematic; script: string; units: ScriptUnits };
+  /** Record that the whole document (JSON) or only the script (CSV) has been saved. */
+  markSaved: (what: 'document' | 'script') => void;
+}
+
+/** Has the document changed since it was last saved or opened? Undoing back to the saved state counts as saved. */
+export function isDirty(st: Pick<AppState, 'schematic' | 'script' | 'units' | 'saved'>): boolean {
+  const { saved } = st;
+  return (
+    st.schematic !== saved.schematic ||
+    st.script !== saved.script ||
+    st.units.volume !== saved.units.volume ||
+    st.units.flow !== saved.units.flow ||
+    st.units.time !== saved.units.time
+  );
 }
 
 export const emptySchematic = (): Schematic => ({ version: SCHEMATIC_VERSION, name: 'Untitled', components: [], pipes: [] });
@@ -78,8 +95,19 @@ export const useApp = create<AppState>((set, get) => ({
   draft: null,
   error: null,
 
+  saved: { schematic: twoInletFlowCell, script: twoInletFlowCellScript, units: DEFAULT_UNITS },
+  markSaved: (what) =>
+    set((st) => ({
+      saved: what === 'document' ? { schematic: st.schematic, script: st.script, units: st.units } : { ...st.saved, script: st.script },
+    })),
+
   load: (schematic, script) =>
-    set((st) => ({ schematic, script: script?.text ?? '', units: script?.units ?? DEFAULT_UNITS, docVersion: st.docVersion + 1, past: [], future: [], gestureBase: null, selection: null, draft: null, error: null, tool: { type: 'select' }, mode: 'edit' })),
+    set((st) => ({
+      schematic,
+      script: script?.text ?? '',
+      units: script?.units ?? DEFAULT_UNITS,
+      saved: { schematic, script: script?.text ?? '', units: script?.units ?? DEFAULT_UNITS },
+      docVersion: st.docVersion + 1, past: [], future: [], gestureBase: null, selection: null, draft: null, error: null, tool: { type: 'select' }, mode: 'edit' })),
 
   commit: (s) => {
     const cur = get().schematic;

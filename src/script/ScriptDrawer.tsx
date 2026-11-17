@@ -30,12 +30,14 @@ export function ScriptDrawer() {
       : `${compiled.steps.length} steps · ${fmtTime(compiled.duration)} total${compiled.warnings.length ? ` · ${compiled.warnings.length} warning${compiled.warnings.length > 1 ? 's' : ''}` : ''}`;
 
   const openCsv = async () => {
+    if (text !== useApp.getState().saved.script && !window.confirm('The script has unsaved changes. Replace it?')) return;
     const f = await pickTextFile('.csv,.txt,text/csv,text/plain');
     if (f) setScript(f.text);
   };
   const saveCsv = () => {
     const base = schematic.name.trim().replace(/[^\w-]+/g, '_') || 'script';
     downloadText(`${base}.csv`, text, 'text/csv');
+    useApp.getState().markSaved('script');
   };
 
   return (

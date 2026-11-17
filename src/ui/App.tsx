@@ -13,7 +13,14 @@ import { RunPanel } from '../run/RunPanel';
 import { useRun } from '../run/runStore';
 import { useRunLoop } from '../run/useRunLoop';
 import { downloadText, pickTextFile } from './files';
-import { emptySchematic, useApp } from './store';
+import { emptySchematic, isDirty, useApp } from './store';
+
+const DISCARD_PROMPT = 'You have unsaved changes. Discard them?';
+
+/** Ask before throwing away unsaved work. True = go ahead. */
+function confirmDiscard(): boolean {
+  return !isDirty(useApp.getState()) || window.confirm(DISCARD_PROMPT);
+}
 
 export function App() {
   const schematic = useApp((s) => s.schematic);
@@ -21,9 +28,21 @@ export function App() {
   const mode = useApp((s) => s.mode);
   const canUndo = useApp((s) => s.past.length > 0);
   const canRedo = useApp((s) => s.future.length > 0);
+  const dirty = useApp(isDirty);
   const { load, setError, undo, redo, setMode } = useApp.getState();
   useEditorKeys();
   useRunLoop();
+
+  // Warn before closing or reloading the tab with unsaved changes (the browser shows its own dialog).
+  useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = ''; // required by some browsers to show the dialog
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [dirty]);
 
   // Leaving run mode (or loading another document) discards the simulation.
   useEffect(() => {
@@ -39,6 +58,7 @@ export function App() {
   };
 
   const open = async () => {
+    if (!confirmDiscard()) return;
     const f = await pickTextFile('.json,application/json');
     if (!f) return;
     try {
@@ -55,6 +75,7 @@ export function App() {
     const base = schematic.name.trim().replace(/[^\w-]+/g, '_') || 'schematic';
     const { script, units } = useApp.getState();
     downloadText(`${base}.json`, serializeDocument(schematic, { text: script, units }));
+    useApp.getState().markSaved('document');
   };
 
   const running = mode === 'run';
@@ -62,7 +83,15 @@ export function App() {
     <div className="app">
       <header className="toolbar">
         <strong className="title">Flow Cell Simulator</strong>
-        <span className="doc-name">{schematic.name}</span>
+        <span className="doc-name">
+          {schematic.name}
+          {dirty && (
+            <span className="unsaved" title="Changes since the last Save or Open">
+              {' '}
+              • unsaved
+            </span>
+          )}
+        </span>
         <div className="segmented" role="group" aria-label="Mode">
           <button className={running ? '' : 'active'} onClick={() => setMode('edit')}>
             Edit
@@ -82,8 +111,8 @@ export function App() {
           </div>
         )}
         <div className="spacer" />
-        <button onClick={() => load(emptySchematic())}>New</button>
-        <button onClick={() => load(twoInletFlowCell, { text: twoInletFlowCellScript, units: DEFAULT_UNITS })}>Example</button>
+        <button onClick={() => confirmDiscard() && load(emptySchematic())}>New</button>
+        <button onClick={() => confirmDiscard() && load(twoInletFlowCell, { text: twoInletFlowCellScript, units: DEFAULT_UNITS })}>Example</button>
         <button onClick={open}>Open…</button>
         <button onClick={save}>Save</button>
       </header>
