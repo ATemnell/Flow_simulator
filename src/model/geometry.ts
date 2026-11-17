@@ -13,6 +13,9 @@ export interface WorldPort {
   dir: Vec;
 }
 
+/** Pipe wall thickness on screen, each side. */
+export const WALL = 1.5;
+
 export const FLOWCELL_WIDTH = 120;
 export const FLOWCELL_PORT_PITCH = 20;
 
@@ -20,9 +23,9 @@ export function flowCellHeight(fc: Pick<FlowCell, 'inlets' | 'outlets'>): number
   return Math.max(fc.inlets, fc.outlets, 1) * FLOWCELL_PORT_PITCH + 20;
 }
 
-/** Evenly spaced y offsets for `n` ports along an edge of height `h`, centred on 0. */
-function spread(n: number, h: number): number[] {
-  return Array.from({ length: n }, (_, i) => -h / 2 + (h * (i + 0.5)) / n);
+/** y offsets for `n` ports at FLOWCELL_PORT_PITCH spacing, centred on 0 (always on the 10 mm grid). */
+function spread(n: number): number[] {
+  return Array.from({ length: n }, (_, i) => (i - (n - 1) / 2) * FLOWCELL_PORT_PITCH);
 }
 
 export function localPorts(c: Component): LocalPort[] {
@@ -35,13 +38,12 @@ export function localPorts(c: Component): LocalPort[] {
         { id: 'b', offset: { x: 20, y: 0 }, dir: { x: 1, y: 0 } },
       ];
     case 'flowcell': {
-      const h = flowCellHeight(c) - 20;
-      const ins = spread(c.inlets, h).map((y, i) => ({
+      const ins = spread(c.inlets).map((y, i) => ({
         id: `in${i}`,
         offset: { x: -FLOWCELL_WIDTH / 2, y },
         dir: { x: -1, y: 0 },
       }));
-      const outs = spread(c.outlets, h).map((y, i) => ({
+      const outs = spread(c.outlets).map((y, i) => ({
         id: `out${i}`,
         offset: { x: FLOWCELL_WIDTH / 2, y },
         dir: { x: 1, y: 0 },
@@ -110,4 +112,45 @@ export function pipeVolume_uL(s: Schematic, pipe: Pipe): number {
 /** On-screen width of the liquid channel for a given inner diameter. */
 export function pipeVisualWidth(innerDiameter_mm: number): number {
   return Math.min(24, Math.max(5, innerDiameter_mm * 6));
+}
+
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Bounding box of a component's symbol in local (unrotated) coordinates. */
+export function localBBox(c: Component): Rect {
+  switch (c.kind) {
+    case 'pump':
+      return { x: -86, y: -16, w: 138, h: 32 };
+    case 'valve':
+      return { x: -22, y: -24, w: 44, h: 38 };
+    case 'flowcell': {
+      const h = flowCellHeight(c);
+      return { x: -FLOWCELL_WIDTH / 2, y: -h / 2, w: FLOWCELL_WIDTH, h };
+    }
+    case 'reservoir':
+      return { x: -26, y: -32, w: 52, h: 59 };
+    case 'waste':
+      return { x: -18, y: -22, w: 36, h: 42 };
+    case 'junction':
+      return { x: -7, y: -7, w: 14, h: 14 };
+  }
+}
+
+/** Axis-aligned bounding box of a component in world coordinates. */
+export function worldBBox(c: Component): Rect {
+  const b = localBBox(c);
+  const corners = [
+    { x: b.x, y: b.y },
+    { x: b.x + b.w, y: b.y },
+    { x: b.x, y: b.y + b.h },
+    { x: b.x + b.w, y: b.y + b.h },
+  ].map((p) => rotate(p, c.rotation));
+  const xs = corners.map((p) => p.x + c.pos.x);
+  const ys = corners.map((p) => p.y + c.pos.y);
+  return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
 }

@@ -1,13 +1,21 @@
-import { FLOWCELL_WIDTH, flowCellHeight } from '../model/geometry';
+import { FLOWCELL_WIDTH, flowCellHeight, localBBox } from '../model/geometry';
 import type { Component, FlowCell, Pump, Reservoir, Valve } from '../model/types';
 import { theme } from './theme';
 
-/** Draws one component. The symbol is drawn in local coordinates, then rotated; labels stay upright. */
-export function ComponentView({ c }: { c: Component }) {
+/**
+ * Draws one component. The symbol is drawn in local coordinates, then rotated; labels stay upright.
+ * `data-hit`/`data-id` let the editor identify what was clicked.
+ */
+export function ComponentView({ c, ghost = false }: { c: Component; ghost?: boolean }) {
   const transform = `translate(${c.pos.x} ${c.pos.y}) rotate(${c.rotation})`;
+  const b = localBBox(c);
   return (
-    <g className="component" data-id={c.id}>
-      <g transform={transform}>{symbol(c)}</g>
+    <g className={ghost ? 'component ghost' : 'component'} data-hit={ghost ? undefined : 'comp'} data-id={c.id}>
+      <g transform={transform}>
+        {/* Transparent hit area so the whole symbol is clickable, not just its strokes. */}
+        <rect x={b.x} y={b.y} width={b.w} height={b.h} fill="transparent" />
+        {symbol(c)}
+      </g>
       {c.kind !== 'junction' && <Label c={c} />}
     </g>
   );

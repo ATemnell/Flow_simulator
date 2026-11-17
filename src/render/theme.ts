@@ -9,7 +9,8 @@ export const theme = {
   grid: 'var(--fc-grid)',
   valveOpen: 'var(--fc-valve-open)',
   valveClosed: 'var(--fc-valve-closed)',
+  accent: 'var(--fc-accent)',
+  bg: 'var(--bg)',
 };
 
-/** Pipe wall thickness on screen, each side. */
-export const WALL = 1.5;
+export { WALL } from '../model/geometry';
