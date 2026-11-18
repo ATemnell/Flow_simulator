@@ -1,3 +1,10 @@
 node_modules
 dist
 *.log
+
+# Your own projects and scripts stay private: never commit them by accident.
+*.csv
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json

@@ -5,14 +5,15 @@ import { PropertiesPanel } from '../editor/PropertiesPanel';
 import { useEditorKeys } from '../editor/useEditorKeys';
 import { twoInletFlowCell } from '../examples/twoInletFlowCell';
 import { twoInletFlowCellScript } from '../examples/twoInletFlowCellScript';
-import { parseDocument, serializeDocument, validateSchematic } from '../model/serialize';
+import { validateSchematic } from '../model/serialize';
 import { compileScript } from '../script/compile';
 import { ScriptDrawer } from '../script/ScriptDrawer';
 import { DEFAULT_UNITS } from '../script/units';
 import { RunPanel } from '../run/RunPanel';
 import { useRun } from '../run/runStore';
 import { useRunLoop } from '../run/useRunLoop';
-import { downloadText, pickTextFile } from './files';
+import { canUseHandles } from './files';
+import { loadDetached, openProject, reopenRecent, saveProject, useCsvWatch, useFiles, useRecentProject } from './project';
 import { emptySchematic, isDirty, useApp } from './store';
 
 const DISCARD_PROMPT = 'You have unsaved changes. Discard them?';
@@ -29,9 +30,26 @@ export function App() {
   const canUndo = useApp((s) => s.past.length > 0);
   const canRedo = useApp((s) => s.future.length > 0);
   const dirty = useApp(isDirty);
-  const { load, setError, undo, redo, setMode } = useApp.getState();
+  const { setError, undo, redo, setMode } = useApp.getState();
+  const projectName = useFiles((s) => s.projectName);
+  const hasProjectFile = useFiles((s) => s.project !== null);
+  const recent = useFiles((s) => s.recent);
   useEditorKeys();
   useRunLoop();
+  useRecentProject();
+  useCsvWatch();
+
+  // Ctrl+S saves (overwriting the project file), Ctrl+Shift+S saves as.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        saveProject(e.shiftKey);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Warn before closing or reloading the tab with unsaved changes (the browser shows its own dialog).
   useEffect(() => {
@@ -57,34 +75,17 @@ export function App() {
     setMode('run');
   };
 
-  const open = async () => {
-    if (!confirmDiscard()) return;
-    const f = await pickTextFile('.json,application/json');
-    if (!f) return;
-    try {
-      const doc = parseDocument(f.text);
-      load(doc.schematic, doc.script);
-    } catch (e) {
-      setError(`Could not open ${f.name}: ${(e as Error).message}`);
-    }
-  };
-
-  const save = () => {
-    const problems = validateSchematic(schematic);
-    if (problems.length) return setError(`Cannot save:\n${problems.join('\n')}`);
-    const base = schematic.name.trim().replace(/[^\w-]+/g, '_') || 'schematic';
-    const { script, units } = useApp.getState();
-    downloadText(`${base}.json`, serializeDocument(schematic, { text: script, units }));
-    useApp.getState().markSaved('document');
-  };
+  const open = () => confirmDiscard() && openProject();
+  const reopen = () => confirmDiscard() && reopenRecent();
 
   const running = mode === 'run';
   return (
     <div className="app">
       <header className="toolbar">
         <strong className="title">Flow Cell Simulator</strong>
-        <span className="doc-name">
+        <span className="doc-name" title={projectName ? `Saved to ${projectName}` : 'Not saved to a file yet'}>
           {schematic.name}
+          {projectName && <span className="file-name"> — {projectName}</span>}
           {dirty && (
             <span className="unsaved" title="Changes since the last Save or Open">
               {' '}
@@ -111,11 +112,29 @@ export function App() {
           </div>
         )}
         <div className="spacer" />
-        <button onClick={() => confirmDiscard() && load(emptySchematic())}>New</button>
-        <button onClick={() => confirmDiscard() && load(twoInletFlowCell, { text: twoInletFlowCellScript, units: DEFAULT_UNITS })}>Example</button>
+        <button onClick={() => confirmDiscard() && loadDetached(emptySchematic())}>New</button>
+        <button onClick={() => confirmDiscard() && loadDetached(twoInletFlowCell, { text: twoInletFlowCellScript, units: DEFAULT_UNITS })}>Example</button>
         <button onClick={open}>Open…</button>
-        <button onClick={save}>Save</button>
+        <button onClick={() => saveProject()} title={hasProjectFile ? `Overwrite ${projectName} (Ctrl+S)` : 'Choose a file and save (Ctrl+S)'}>
+          Save
+        </button>
+        {canUseHandles && (
+          <button onClick={() => saveProject(true)} title="Save to a new file (Ctrl+Shift+S)">
+            Save As…
+          </button>
+        )}
       </header>
+      {recent && (
+        <div className="notice">
+          <span>
+            Continue where you left off: <b>{recent.name}</b>
+          </span>
+          <button onClick={reopen}>Reopen</button>
+          <button className="link" onClick={() => useFiles.setState({ recent: null })}>
+            Dismiss
+          </button>
+        </div>
+      )}
       {error && (
         <div className="error" role="alert">
           <pre>{error}</pre>

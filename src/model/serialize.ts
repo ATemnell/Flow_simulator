@@ -6,17 +6,23 @@ import { DEFAULT_UNITS, type ScriptUnits } from '../script/units';
 export interface DocumentScript {
   text: string;
   units: ScriptUnits;
+  /** Name of the CSV file the script is linked to, if any (informational: browsers cannot open by path). */
+  file?: string;
 }
 
 export function serializeDocument(s: Schematic, script?: DocumentScript): string {
-  return JSON.stringify({ ...s, version: SCHEMATIC_VERSION, ...(script && script.text.trim() ? { script } : {}) }, null, 2);
+  return JSON.stringify({ ...s, version: SCHEMATIC_VERSION, ...(script && (script.text.trim() || script.file) ? { script } : {}) }, null, 2);
 }
 
 export function parseDocument(json: string): { schematic: Schematic; script?: DocumentScript } {
   const schematic = parseSchematic(json);
   const raw = JSON.parse(json);
   const sc = raw.script;
-  if (sc && typeof sc.text === 'string') return { schematic, script: { text: sc.text, units: { ...DEFAULT_UNITS, ...(sc.units ?? {}) } } };
+  if (sc && typeof sc.text === 'string')
+    return {
+      schematic,
+      script: { text: sc.text, units: { ...DEFAULT_UNITS, ...(sc.units ?? {}) }, ...(typeof sc.file === 'string' && sc.file ? { file: sc.file } : {}) },
+    };
   return { schematic };
 }
 

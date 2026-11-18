@@ -25,6 +25,8 @@ interface AppState {
   units: ScriptUnits;
   setScript: (text: string) => void;
   setUnits: (u: ScriptUnits) => void;
+  /** Replace the script with a file's contents and treat that as its saved state (linked CSV reloaded). */
+  reloadScript: (text: string) => void;
   /** Bumped whenever a different document is loaded (used to re-fit the view). */
   docVersion: number;
   past: Schematic[];
@@ -86,6 +88,7 @@ export const useApp = create<AppState>((set, get) => ({
   units: DEFAULT_UNITS,
   setScript: (script) => set({ script }),
   setUnits: (units) => set({ units }),
+  reloadScript: (script) => set((st) => ({ script, saved: { ...st.saved, script } })),
   docVersion: 0,
   past: [],
   future: [],

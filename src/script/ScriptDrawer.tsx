@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRun } from '../run/runStore';
-import { downloadText, pickTextFile } from '../ui/files';
+import { canUseHandles } from '../ui/files';
+import { openCsv, reconnectCsv, reloadCsv, resolveConflict, saveCsv, unlinkCsv, useFiles } from '../ui/project';
 import { useApp } from '../ui/store';
 import { compileScript, type Problem } from './compile';
 import { FLOW_UNITS, TIME_UNITS, VOLUME_UNITS } from './units';
@@ -29,16 +30,11 @@ export function ScriptDrawer() {
       ? `${compiled.errors.length} error${compiled.errors.length > 1 ? 's' : ''}`
       : `${compiled.steps.length} steps · ${fmtTime(compiled.duration)} total${compiled.warnings.length ? ` · ${compiled.warnings.length} warning${compiled.warnings.length > 1 ? 's' : ''}` : ''}`;
 
-  const openCsv = async () => {
-    if (text !== useApp.getState().saved.script && !window.confirm('The script has unsaved changes. Replace it?')) return;
-    const f = await pickTextFile('.csv,.txt,text/csv,text/plain');
-    if (f) setScript(f.text);
-  };
-  const saveCsv = () => {
-    const base = schematic.name.trim().replace(/[^\w-]+/g, '_') || 'script';
-    downloadText(`${base}.csv`, text, 'text/csv');
-    useApp.getState().markSaved('script');
-  };
+  const csvName = useFiles((s) => s.csvName);
+  const linked = useFiles((s) => s.csv !== null);
+  const reloadedAt = useFiles((s) => s.csvReloadedAt);
+  const conflict = useFiles((s) => s.csvConflict);
+  const missing = useFiles((s) => s.csvMissing);
 
   return (
     <section className={open ? 'drawer open' : 'drawer'} aria-label="Script">
@@ -47,6 +43,13 @@ export function ScriptDrawer() {
           {open ? '▾' : '▸'} Script (CSV)
         </button>
         <span className={compiled.errors.length ? 'status bad' : 'status'}>{status}</span>
+        {csvName && (
+          <span className="csv-file" title={linked ? 'Linked: changes saved to this file (e.g. from Excel) are loaded automatically' : undefined}>
+            {linked ? '🔗 ' : ''}
+            {csvName}
+            {linked && reloadedAt && <span className="reloaded"> · reloaded {new Date(reloadedAt).toLocaleTimeString()}</span>}
+          </span>
+        )}
         <div className="spacer" />
         <label className="unit-select">
           Volume
@@ -80,13 +83,51 @@ export function ScriptDrawer() {
         </label>
         {!running && (
           <>
-            <button onClick={openCsv}>Open CSV…</button>
-            <button onClick={saveCsv} disabled={!text.trim()}>
+            <button onClick={openCsv} title={canUseHandles ? 'Open a CSV file and link it to this project' : undefined}>
+              Open CSV…
+            </button>
+            {linked && (
+              <button onClick={reloadCsv} title={`Read ${csvName} again now`}>
+                Reload
+              </button>
+            )}
+            <button onClick={() => saveCsv()} disabled={!text.trim()} title={linked ? `Overwrite ${csvName}` : undefined}>
               Save CSV
             </button>
+            {canUseHandles && (
+              <button onClick={() => saveCsv(true)} disabled={!text.trim()} title="Save the script to a new CSV file and link it">
+                Save CSV As…
+              </button>
+            )}
+            {linked && (
+              <button className="link" onClick={unlinkCsv} title="Stop using the file; the script stays inside the project">
+                Unlink
+              </button>
+            )}
           </>
         )}
       </header>
+      {conflict !== null && (
+        <div className="notice warn">
+          <span>
+            <b>{csvName}</b> changed on disk, but the script here has unsaved edits.
+          </span>
+          <button onClick={() => resolveConflict('file')}>Load the file</button>
+          <button onClick={() => resolveConflict('mine')}>Keep my edits</button>
+        </div>
+      )}
+      {missing && (
+        <div className="notice">
+          <span>
+            This project's script is linked to <b>{missing.name}</b>. Showing the copy saved in the project.
+          </span>
+          {missing.handle && <button onClick={() => reconnectCsv(missing.handle!)}>Reconnect</button>}
+          {canUseHandles && <button onClick={openCsv}>Locate…</button>}
+          <button className="link" onClick={() => useFiles.setState({ csvMissing: null })}>
+            Use the copy
+          </button>
+        </div>
+      )}
       {open &&
         (running && runner ? (
           <StepList />
